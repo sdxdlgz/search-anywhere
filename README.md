@@ -37,7 +37,7 @@ ssh -L 18765:127.0.0.1:8765 your-user@your-vps
 
 然后打开 <http://localhost:18765> 登录。使用 18765 可避免与本机正在运行的 8765 端口冲突。
 
-镜像页面：[GitHub Packages](https://github.com/users/sdxdlgz/packages/container/package/search-anywhere)。GHCR 首次发布默认可能为私有；如果匿名拉取提示拒绝访问，由仓库维护者在该包的 Package settings 中将可见性设为 Public，或使用具有 `read:packages` 权限的 GitHub 凭证登录 GHCR。
+镜像已公开发布：[GitHub Packages](https://github.com/users/sdxdlgz/packages/container/package/search-anywhere)。支持 `linux/amd64` 和 `linux/arm64`，无需登录 GHCR 即可拉取。首次发布的[双架构验证](https://github.com/sdxdlgz/search-anywhere/actions/runs/34871021164)已通过；Fork 后发布自己的包时，请另外检查该包的可见性。
 
 ### 配置公网 HTTPS
 
