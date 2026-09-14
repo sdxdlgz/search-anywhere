@@ -23,10 +23,13 @@ def start(suffix):
     volumes.append(volume)
     containers.append(name)
     docker("run", "-d", "--name", name, "--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "-v", volume + ":/app/data", "-p", "127.0.0.1::8765", IMAGE)
-    address = docker("port", name, "8765/tcp").splitlines()[0]
-    base = "http://" + address
+    base = endpoint(name)
     wait(base)
     return name, base
+
+
+def endpoint(name):
+    return "http://" + docker("port", name, "8765/tcp").splitlines()[0]
 
 
 def wait(base):
@@ -74,6 +77,7 @@ try:
         archive = response.read()
     assert archive.startswith(b"SABACK01") and b"container-fixture-key" not in archive
     docker("restart", "--time", "15", name)
+    base = endpoint(name)
     wait(base)
     cookie = login(name, base)
     with request(base, "/api/keys", cookie) as response:
@@ -89,6 +93,10 @@ try:
         keys = json.load(response)
     assert keys[0]["label"] == "Container fixture" and "secret" not in keys[0]
     print("Container non-root/read-only runtime, persistent volume, restart and encrypted migration passed")
+except Exception:
+    for name in containers:
+        subprocess.run(["docker", "logs", "--tail", "80", name], check=False)
+    raise
 finally:
     for name in containers:
         subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL, check=False)
