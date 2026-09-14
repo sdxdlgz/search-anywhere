@@ -1,0 +1,21 @@
+node_modules/
+dist/
+dist-server/
+.data/
+.env
+.env.*
+!.env.example
+.venv/
+test-results/
+*.log
+__pycache__/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.db
+
+# Local planning and verification history
+/task_plan.md
+/findings.md
+/progress.md

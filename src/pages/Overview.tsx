@@ -1,0 +1,26 @@
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Clock3, KeyRound, Layers, Plus, Radio, Zap } from 'lucide-react';
+import type { Data } from '../App';
+import { PROVIDERS } from '../../shared/types';
+import { ProviderMark, providerName } from '../components';
+import { number } from '../api';
+import { ChannelQuotas } from './ChannelQuotas';
+
+export function Overview({ data, onAdd, navigate }: { data: Data; onAdd: () => void; navigate: (page: 'keys' | 'logs' | 'playground' | 'connections') => void }) {
+  const d = data.dashboard, max = Math.max(1, ...d.daily.map(day => day.calls));
+  return <div className="page-enter"><div className="page-heading"><div><div className="eyebrow">YOUR SEARCH, AT A GLANCE</div><h1>搜索概览<span className="heading-dot">.</span></h1><p>所有搜索渠道，一个清晰的视野。</p></div><div className="heading-actions"><button className="button" onClick={() => navigate('playground')}><Zap size={16}/>测试搜索</button><button className="button primary" onClick={onAdd}><Plus size={17}/>添加密钥</button></div></div>
+    <div className="stats-grid">
+      <Stat label="今日搜索请求" value={number(d.requests)} detail="客户端请求 · UTC 今日" icon={<ArrowUpRight size={18}/>}/>
+      <Stat label="上游调用次数" value={number(d.calls)} detail={`${number(d.successes)} 次成功 · 含重试与正文读取`} icon={<Layers size={18}/>}/>
+      <Stat label="平均响应时间" value={d.requests ? `${(d.avg_latency_ms / 1000).toFixed(2)}` : '—'} unit={d.requests ? 's' : ''} detail={`缓存命中 ${number(d.cache_hits)} 次`} icon={<Clock3 size={18}/>}/>
+      <Stat label="可用密钥" value={`${d.ready_keys}`} unit={`/ ${d.keys}`} detail={`分布于 ${new Set(data.keys.map(key => key.provider)).size} 个搜索渠道`} icon={<KeyRound size={18}/>} special/>
+    </div>
+    <div className="overview-mid"><section className="panel chart-panel"><div className="panel-heading"><div><h2>调用趋势</h2><p>过去 7 天 · UTC</p></div><span className="legend"><i/>上游调用<span className="legend-dot"/>搜索请求</span></div>
+      <div className="chart"><div className="chart-lines"><span>{max}</span><span>{Math.round(max / 2)}</span><span>0</span></div><div className="chart-bars">{d.daily.map(day => <div className="chart-day" key={day.date}><div className="bar-area"><div className="bar up" style={{ height: `${day.calls / max * 100}%` }} title={`${day.calls} 次上游调用`}/><div className="bar down" style={{ height: `${day.requests / max * 100}%` }} title={`${day.requests} 次请求`}/></div><span>{day.date.slice(5).replace('-', '/')}</span></div>)}</div>{!d.daily.some(day => day.calls) && <div className="chart-empty"><BarChart3 size={24}/><span>完成第一次搜索后，这里会开始记录。</span></div>}</div>
+      <div className="chart-bottom"><span>每日调用上限 <strong>{d.daily_call_limit ? number(d.daily_call_limit) : '不限'}</strong></span><span>已使用 <strong>{d.daily_call_limit ? `${Math.min(100, Math.round(d.calls / d.daily_call_limit * 100))}%` : `${d.calls} 次`}</strong></span></div>
+    </section><section className="panel cost-panel"><div className="panel-heading"><div><h2>今日已报告消费</h2><p>只计入上游响应中的费用</p></div><ArrowDownLeft size={18}/></div><div className="cost-number"><span>$</span>{d.reported_cost_usd.toFixed(4)}<small>USD</small></div>{d.credits_by_provider.filter(p => p.provider === 'tavily' || p.provider === 'keenable').map(p => <div className="cost-row" key={p.provider}><span>{providerName[p.provider]} credits<small className="cell-sub">估算 {number(p.estimated)} · 已知付费 {number(p.paid)}</small></span><strong>{number(p.reported)} <small>已报告</small></strong></div>)}<div className="notice subtle"><Radio size={16}/><span>未报告费用的调用不计入金额。此处不是账户余额；正式账单以供应商为准。</span></div></section></div>
+    <div className="section-heading"><div><h2>搜索渠道</h2><span>并行检索，各取所长</span></div><button className="text-button" onClick={() => navigate('keys')}>管理渠道<ArrowRight size={15}/></button></div>
+    <div className="provider-grid">{PROVIDERS.map(provider => { const keys = data.keys.filter(k => k.provider === provider), ready = keys.filter(k => k.state === 'ready'), stats = d.providers.find(p => p.provider === provider)!; return <button className="provider-card" key={provider} onClick={() => navigate('keys')}><div className="provider-card-head"><ProviderMark provider={provider}/><strong>{providerName[provider]}</strong><span className={`tiny-status ${ready.length ? 'available' : ''}`}>{ready.length ? '已连接' : '待配置'}</span></div><div className="provider-card-stats"><div><span>可用密钥</span><strong>{ready.length}<small> / {keys.length}</small></strong></div><div><span>今日调用</span><strong>{number(stats.calls)}</strong></div><div><span>成功率</span><strong>{stats.calls ? `${Math.round(stats.successes / stats.calls * 100)}%` : '—'}</strong></div></div><div className="provider-card-foot"><span>默认模式 <code>{data.profiles.find(p => p.id === data.settings.default_profile)?.modes[provider] || '未启用'}</code></span><ArrowUpRight size={16}/></div></button>; })}</div>
+    <ChannelQuotas keys={data.keys} onAdd={onAdd}/>
+  </div>;
+}
+function Stat({ label, value, unit, detail, icon, special }: { label: string; value: string; unit?: string; detail: string; icon: React.ReactNode; special?: boolean }) { return <section className={`stat-card ${special ? 'featured' : ''}`}><div className="stat-label">{label}<span>{icon}</span></div><div className="stat-value">{value}<small>{unit}</small></div><div className="stat-detail">{special && <span className="status-dot"/>}{detail}</div></section>; }
