@@ -1,0 +1,27 @@
+name: search-anywhere
+services:
+  search-anywhere:
+    image: ${SA_IMAGE:-ghcr.io/sdxdlgz/search-anywhere:latest}
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${SA_BIND:-127.0.0.1}:${SA_PORT:-8765}:8765"
+    environment:
+      SA_HOST: 0.0.0.0
+      SA_PORT: 8765
+      SA_DATA_DIR: /app/data
+      SA_ADMIN_TOKEN: ${SA_ADMIN_TOKEN:-}
+      SA_TRUST_PROXY: ${SA_TRUST_PROXY:-}
+      SA_ALLOWED_ORIGINS: ${SA_ALLOWED_ORIGINS:-}
+    volumes:
+      - data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 210s
+volumes:
+  data:

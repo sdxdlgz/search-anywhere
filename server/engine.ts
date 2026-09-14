@@ -13,13 +13,18 @@ export class Engine {
   private lastSyncAttempt = new Map<string, number>();
   private parallelFreeCooldown = 0;
   private active = 0;
+  private syncingBatch = false;
   constructor(readonly store: Store, readonly providers: Providers) {}
+  get busy() { return this.active > 0 || this.pending.size > 0 || this.syncing.size > 0 || this.syncingBatch || this.store.inflight.size > 0; }
+  resetRuntime() { this.cache.clear(); this.pending.clear(); this.lastSyncAttempt.clear(); this.parallelFreeCooldown = 0; }
+  private available() { if (this.store.maintenance) throw new GatewayError('正在备份或恢复数据，请稍后重试。', 'maintenance', 503); }
   private profile(id?: string): Profile {
     const profile = this.store.profile(id);
     if (!profile) throw new GatewayError('搜索预设不存在。', 'invalid_profile', 400);
     return profile;
   }
   async search(input: SearchInput, caller: Caller, options: { bypassCache?: boolean; forcedKeyId?: string; signal?: AbortSignal } = {}): Promise<SearchResponse> {
+    this.available();
     const profile = this.profile(input.profile);
     const count = input.max_results ?? profile.max_results;
     const cacheKey = hash(JSON.stringify([caller.id, input, count, profile, this.store.revision]));
@@ -168,6 +173,7 @@ export class Engine {
       () => this.providers.parallelFree(url, this.parallelSession(caller), signal).then(requireContent));
   }
   async fetch(url: string, caller: Caller, profileId?: string, signal?: AbortSignal) {
+    this.available();
     publicUrl(url);
     const profile = this.profile(profileId), start = Date.now();
     if (this.active >= 24) throw new GatewayError('网关并发已满，请稍后重试。', 'busy', 429);
@@ -197,6 +203,7 @@ export class Engine {
     return { ...pageOf(response, 0, profile.max_results), url, provider: first.outcome.provider };
   }
   async syncUsage(id: string): Promise<UsageSnapshot> {
+    this.available();
     const manual = this.store.exaLedger.manualUsage(id);
     if (manual) return manual;
     if (this.syncing.has(id)) return this.syncing.get(id)!;
@@ -226,6 +233,11 @@ export class Engine {
       ['keenable', 'anysearch', 'exa', 'parallel'].includes(key.provider) ? this.store.loginSession(key.id)?.generation : null])) : '';
   }
   async syncDueUsage() {
+    if (this.store.maintenance || this.syncingBatch) return;
+    this.syncingBatch = true;
+    try { await this.runUsageBatch(); } finally { this.syncingBatch = false; }
+  }
+  private async runUsageBatch() {
     const interval = this.store.settings().usage_sync_minutes * 60000;
     if (!interval) return;
     const due = this.store.keys().filter(k => {

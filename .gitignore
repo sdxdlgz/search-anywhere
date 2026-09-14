@@ -14,6 +14,7 @@ __pycache__/
 *.sqlite-wal
 *.sqlite3
 *.db
+*.sab
 
 # Local planning and verification history
 /task_plan.md

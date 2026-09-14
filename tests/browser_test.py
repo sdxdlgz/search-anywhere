@@ -17,7 +17,7 @@ with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(viewport={"width": 1440, "height": 1050}, device_scale_factor=1)
     page = context.new_page()
-    assert page.request.get(f"{BASE}/health").json()["version"] == "0.2.2", "Stale test server: stop the previous browser fixture before rerunning"
+    assert page.request.get(f"{BASE}/health").json()["version"] == "0.3.0", "Stale test server: stop the previous browser fixture before rerunning"
     errors = []
     expected_errors = set()
     page.on("pageerror", lambda error: errors.append(str(error)))

@@ -14,7 +14,7 @@ export function mask(value: string): string {
 export class Vault {
   private key: Buffer;
   constructor(directory: string) {
-    mkdirSync(directory, { recursive: true });
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
     const path = join(directory, 'encryption.key');
     if (!existsSync(path) && existsSync(join(directory, 'gateway.sqlite'))) {
       throw new Error('加密密钥缺失：请恢复 .data/encryption.key，不能为现有数据库创建新密钥。');

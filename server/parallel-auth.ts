@@ -18,6 +18,8 @@ export class ParallelAuth {
   private starts = new Map<string, Promise<ParallelAuthorization>>();
   private registration?: Promise<string>;
   constructor(private store: Store, private http: HttpFetch) {}
+  get busy() { return !!this.registration || this.starts.size > 0 || [...this.flows.values()].some(flow => !!flow.pending); }
+  reset() { this.flows.clear(); }
   private current(flow: Flow) {
     const key = this.store.key(flow.keyId);
     if (this.flows.get(flow.keyId) !== flow) throw changed();

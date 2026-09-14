@@ -6,7 +6,7 @@ type Json = Record<string, unknown>;
 const object = (value: unknown): Json => value && typeof value === 'object' && !Array.isArray(value) ? value as Json : {};
 
 export async function parallelFreeMcp(http: HttpFetch, name: string, args: Json, signal: AbortSignal): Promise<Json> {
-  const client = new Client({ name: 'search-anywhere', version: '0.2.2' });
+  const client = new Client({ name: 'search-anywhere', version: '0.3.0' });
   let transportError: GatewayError | undefined;
   const transport = new StreamableHTTPClientTransport(new URL('https://search.parallel.ai/mcp'), {
     fetch: async (input, init) => {

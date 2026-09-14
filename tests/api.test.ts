@@ -82,3 +82,19 @@ test('N1/N3: separate imports continue numbering; conflicts roll back without co
     assert.deepEqual(current.filter((k: { id: string }) => initial.some((v: { id: string }) => v.id === k.id)), initial);
   } finally { await f.cleanup(); }
 });
+
+test('D1: a configured Docker proxy hop preserves HTTPS auth while untrusted forwarded headers are ignored', async () => {
+  const previous = process.env.SA_TRUST_PROXY;
+  try {
+    for (const trust of ['', '1', '127.0.0.0/8,::1/128']) {
+      process.env.SA_TRUST_PROXY = trust;
+      const f = fixture();
+      try {
+        const base = await f.listen();
+        const response = await fetch(`${base}/api/session`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https', Origin: base.replace('http:', 'https:') }, body: JSON.stringify({ token: ADMIN }) });
+        assert.equal(response.status, trust ? 200 : 403);
+        if (trust) assert.match(response.headers.get('set-cookie')!, /; Secure/);
+      } finally { await f.cleanup(); }
+    }
+  } finally { if (previous === undefined) delete process.env.SA_TRUST_PROXY; else process.env.SA_TRUST_PROXY = previous; }
+});

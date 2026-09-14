@@ -50,7 +50,7 @@ export class Providers {
   private async request(url: string, secret: string, provider: Provider, signal: AbortSignal, body?: Json): Promise<Json> {
     try {
       const response = await this.http(url, { method: body ? 'POST' : 'GET', redirect: 'error', signal,
-        headers: { 'Content-Type': 'application/json', ...(provider === 'tavily' || provider === 'anysearch' ? { Authorization: `Bearer ${secret}` } : { 'x-api-key': secret }), ...(provider === 'anysearch' ? { 'X-Anysearch-Client': 'search-anywhere/0.2.2' } : {}) },
+        headers: { 'Content-Type': 'application/json', ...(provider === 'tavily' || provider === 'anysearch' ? { Authorization: `Bearer ${secret}` } : { 'x-api-key': secret }), ...(provider === 'anysearch' ? { 'X-Anysearch-Client': 'search-anywhere/0.3.0' } : {}) },
         body: body ? JSON.stringify(body) : undefined });
       if (!response.ok) { await response.body?.cancel(); throw responseError(response); }
       const parsed: unknown = JSON.parse(Buffer.from(await boundedBody(response)).toString('utf8'));
@@ -143,7 +143,7 @@ export class Providers {
     return { ...data, cost_usd: 0, credits: null, paid: false, usage_items: [], billing_source: 'free' };
   }
   private async keenable(key: StoredKey, name: string, args: Json, mode: string, signal: AbortSignal): Promise<ProviderData> {
-    const client = new Client({ name: 'search-anywhere', version: '0.2.2' });
+    const client = new Client({ name: 'search-anywhere', version: '0.3.0' });
     const secret = this.store.secret(key);
     let httpError: GatewayError | undefined;
     const transport = new StreamableHTTPClientTransport(new URL('https://api.keenable.ai/mcp'), {

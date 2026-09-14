@@ -28,6 +28,7 @@ export class Store {
   readonly vault: Vault;
   readonly exaLedger: ExaLedger;
   revision = 0;
+  maintenance = false;
   readonly inflight = new Map<string, number>();
   constructor(readonly directory: string) {
     this.vault = new Vault(directory);

@@ -5,8 +5,9 @@ import { createApp } from './app.js';
 import { adminCredential } from './security.js';
 
 if (existsSync('.env')) process.loadEnvFile('.env');
+process.umask(0o077);
 const directory = resolve(process.env.SA_DATA_DIR || '.data');
-mkdirSync(directory, { recursive: true });
+mkdirSync(directory, { recursive: true, mode: 0o700 });
 const { app, close } = createApp({ directory, adminToken: adminCredential(directory), background: true });
 if (process.argv.includes('--production')) {
   app.use(express.static(resolve('dist')));

@@ -18,6 +18,8 @@
 
 [Parallel 官方 Search 响应](https://docs.parallel.ai/api-reference/search/search)、[请求参数说明](https://docs.parallel.ai/search/advanced-search-settings)
 
+2026-09-15 再次核对官方参数文档，已明确公开模式单次最多返回 20 条，超过会调整并返回警告。按用户要求，当前仍保留原请求配置；该提示不会将 advanced 降级。需要扩大覆盖时由调用方模型拆题、多轮补搜，同一请求内的多个关键词查询仍共享单次结果上限。
+
 ## 验证范围
 
 - W1：搜索和正文提示可见；返回提示不影响正常结果与状态。
