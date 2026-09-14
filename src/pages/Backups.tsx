@@ -4,6 +4,7 @@ import type { BackupPreview, BackupSummary } from '../../shared/types';
 import { json, number } from '../api';
 import { providerName, Spinner } from '../components';
 import type { Provider } from '../../shared/types';
+import { HistoryRetention } from './HistoryRetention';
 
 async function checked(response: Response) {
   if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error?.message || '备份操作失败，请稍后重试。'); }
@@ -26,6 +27,7 @@ export function Backups({ reload }: { reload: () => Promise<void> }) {
   const [password, setPassword] = useState(''), [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<BackupPreview | null>(null), [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('');
+  const [restores, setRestores] = useState(0);
   const clearPreview = () => { setPreview(null); setConfirmed(false); setError(''); setMessage(''); };
   const perform = async (action: string, work: () => Promise<void>) => {
     setBusy(action); setError(''); setMessage('');
@@ -49,13 +51,14 @@ export function Backups({ reload }: { reload: () => Promise<void> }) {
       const response = await checked(await fetch(`/api/backups/${action}`, { method: 'POST', body: uploadBody(file, password, action === 'restore' ? preview?.confirmation_token : undefined) }));
       if (action === 'preview') { setPreview(await response.json()); setConfirmed(false); return; }
       setPreview(null); setConfirmed(false); setPassword('');
+      setRestores(value => value + 1);
       setMessage('恢复完成。当前管理员口令保持不变，搜索访问凭证、配置和历史记录已恢复。');
       try { await reload(); } catch { throw new Error('数据已恢复，但页面刷新失败，请刷新浏览器查看。'); }
     });
   };
   return <>
     <div className="page-heading"><div><div className="eyebrow">BACKUP & MIGRATION</div><h1>备份与迁移<span>.</span></h1><p>把搜索工作台完整带到新的服务器。</p></div><span className="inline-flex items-center gap-2 whitespace-nowrap rounded-md border border-[#e5e8e0] px-3 py-2 text-xs text-muted"><ShieldCheck size={14}/>加密备份</span></div>
-    <div className="notice subtle"><Archive size={18}/><span>包含 key、账号备注、官网登录凭证、额度快照、预设、搜索访问凭证和全部历史结果。VPS 的管理员口令和服务器配置保持不变。</span></div>
+    <div className="notice subtle"><Archive size={18}/><span>包含 key、账号备注、官网登录凭证、额度快照、预设、搜索访问凭证和当前保留的历史结果。VPS 的管理员口令和服务器配置保持不变。</span></div>
     {error && <div role="alert" className="notice warn">{error}</div>}{message && <div role="status" className="notice subtle">{message}</div>}
     <div className="grid items-start gap-6 xl:grid-cols-2">
       <section className="panel p-6"><div className="mb-6"><h2 className="mb-2 flex items-center gap-2"><Download size={19}/>导出备份</h2><p className="text-muted">下载一个 .sab 文件，凭备份密码可在另一台 Search Anywhere 恢复。密码无法找回。</p></div>
@@ -75,5 +78,6 @@ export function Backups({ reload }: { reload: () => Promise<void> }) {
       </section>
     </div>
     <p className="mt-6 text-sm text-muted">迁移到 VPS：完成导出后停止旧实例，再在 VPS 导入，避免两端同时续期同一组登录凭证。备份操作需要等待正在执行的搜索和余额查询结束。超过网页上限时，可停机后整体复制数据目录。</p>
+    <HistoryRetention key={restores} reload={reload}/>
   </>;
 }

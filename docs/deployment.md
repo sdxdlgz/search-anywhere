@@ -111,7 +111,9 @@ npm start
 
 每个数据目录只能供一个网关进程使用，不要让多个容器共用同一 SQLite 卷。供应商凭证依赖本地 `encryption.key` 解密；目录迁移时数据库和密钥必须配套。
 
-搜索调用与证据持续保留，目前没有自动清理或定时备份。定期导出并监控磁盘空间；网页备份的大小限制、恢复步骤和停机目录迁移见[备份与迁移](backup-migration.md)。
+默认开启自动清理，保留最近 7 天的搜索词、结果、正文和调用日志内容；升级后的旧配置也使用此默认值。控制台“备份与迁移 → 历史数据清理”可修改天数、关闭或手动清理。需要长期保存证据时，请先调整策略或导出备份。[清理机制与计费记录](history-retention.md)
+
+SQLite 会复用清理产生的空闲页面，主数据库文件通常不会立即缩小。精简计费记录继续保留并缓慢增长；清理不会删除已导出的备份或 Docker 日志。仍应监控磁盘空间。项目不提供定时备份；网页备份的大小限制、恢复步骤和停机目录迁移见[备份与迁移](backup-migration.md)。
 
 ## 开发验证
 
@@ -122,7 +124,7 @@ npm run build
 
 后端测试使用临时数据库和模拟供应商响应，不需要真实搜索 key。
 
-浏览器验收需要 Python Playwright 及 Chromium。在一个终端运行 `node --import tsx tests/browser-server.ts`，另一个终端运行 `python tests/browser_test.py`。迁移专项使用 `python tests/backups_browser_test.py`；每次专项应新启动测试服务器，以隔离数据。
+浏览器验收需要 Python Playwright 及 Chromium。在一个终端运行 `node --import tsx tests/browser-server.ts`，另一个终端运行 `python tests/browser_test.py`。迁移专项使用 `python tests/backups_browser_test.py`，清理专项使用 `python tests/retention_browser_test.py`；每次专项应新启动测试服务器，以隔离数据。
 
 容器检查需要本地 Docker：
 

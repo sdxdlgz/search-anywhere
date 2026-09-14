@@ -7,13 +7,14 @@ import { Engine } from './engine.js';
 import { GatewayError, Providers, type HttpFetch } from './providers.js';
 import { safeEqual } from './security.js';
 import { PROVIDERS } from '../shared/types.js';
-import { profileSchema, settingsSchema } from './profile-schema.js';
+import { profileSchema, retentionPolicySchema, settingsSchema } from './profile-schema.js';
 import { keenableTokens } from './keenable-balance.js';
 import { anysearchTokens } from './anysearch-balance.js';
 import { exaCookie } from './exa-cookies.js';
 import { ParallelAuth } from './parallel-auth.js';
 import { Backups } from './backups.js';
 import { backupRoutes } from './backup-routes.js';
+import { Retention } from './retention.js';
 
 const name = z.string().trim().min(1).max(100);
 const secret = z.string().trim().min(8).max(512).refine(s => !/\s/.test(s), '密钥不能包含空格或换行');
@@ -36,6 +37,7 @@ export function createApp(options: { directory: string; adminToken: string; fetc
   const engine = new Engine(store, new Providers(store, options.fetch));
   const parallelAuth = new ParallelAuth(store, options.fetch || globalThis.fetch);
   const backups = new Backups(store, engine, parallelAuth);
+  const retention = new Retention(store, engine, parallelAuth);
   const app = express();
   app.disable('x-powered-by');
   const trustProxy = process.env.SA_TRUST_PROXY?.trim();
@@ -173,8 +175,18 @@ export function createApp(options: { directory: string; adminToken: string; fetc
   app.put('/api/settings', (req, res) => {
     const settings = settingsSchema.parse(req.body);
     if (!store.profile(settings.default_profile)) return failure(res, 400, 'invalid_profile', '默认预设不存在。');
-    store.saveSettings(settings); res.json(settings);
+    store.saveSettings({ ...settings, history_cleanup: store.settings().history_cleanup }); res.json(store.settings());
   });
+  app.get('/api/retention', (_req, res) => res.json(retention.status()));
+  app.put('/api/retention', (req, res) => {
+    store.saveSettings({ ...store.settings(), history_retention: retentionPolicySchema.parse(req.body) });
+    res.json(retention.status());
+  });
+  app.post('/api/retention/preview', (req, res) => {
+    const input = z.object({ days: z.number().int().min(0).max(3650) }).strict().parse(req.body);
+    res.json(retention.preview(input.days));
+  });
+  app.post('/api/retention/clean', (req, res) => res.json(retention.confirm(z.object({ cutoff: z.string().datetime(), expires_at: z.string().datetime(), confirmation_token: z.string().length(64) }).strict().parse(req.body))));
   app.get('/api/tokens', (_req, res) => res.json(store.tokens()));
   app.post('/api/tokens', (req, res) => res.status(201).json(store.createToken(z.object({ name }).parse(req.body).name)));
   app.delete('/api/tokens/:id', (req, res) => { store.revokeToken(String(req.params.id)); res.json({ ok: true }); });
@@ -226,7 +238,7 @@ export function createApp(options: { directory: string; adminToken: string; fetc
     if (error && typeof error === 'object' && 'status' in error && error.status === 413) return failure(res, 413, 'request_too_large', '请求超过 64 KB 大小限制。');
     return failure(res, 500, 'internal_error', '服务处理失败，请检查服务状态。');
   });
-  const timer = options.background ? setInterval(() => { void engine.syncDueUsage(); }, 60000) : null;
+  const timer = options.background ? setInterval(() => { retention.tick(); void engine.syncDueUsage(); }, 60000) : null;
   timer?.unref();
-  return { app, store, engine, backups, close: () => { if (timer) clearInterval(timer); store.close(); } };
+  return { app, store, engine, backups, retention, close: () => { if (timer) clearInterval(timer); store.close(); } };
 }

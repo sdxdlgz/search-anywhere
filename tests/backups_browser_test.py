@@ -46,7 +46,7 @@ with sync_playwright() as p:
     expect(restore).to_be_in_viewport()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.screenshot(path=str(ARTIFACTS / "backups-mobile.png"), full_page=True)
-    page.get_by_role("checkbox").check()
+    page.get_by_role("checkbox", name="我已备份当前数据", exact=False).check()
     restore.click()
     expect(page.get_by_role("status")).to_contain_text("恢复完成")
     assert len(page.request.get(f"{BASE}/api/keys").json()) == 1

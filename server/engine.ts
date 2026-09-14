@@ -17,6 +17,7 @@ export class Engine {
   constructor(readonly store: Store, readonly providers: Providers) {}
   get busy() { return this.active > 0 || this.pending.size > 0 || this.syncing.size > 0 || this.syncingBatch || this.store.inflight.size > 0; }
   resetRuntime() { this.cache.clear(); this.pending.clear(); this.lastSyncAttempt.clear(); this.parallelFreeCooldown = 0; }
+  clearSearchCache() { this.cache.clear(); }
   private available() { if (this.store.maintenance) throw new GatewayError('正在备份或恢复数据，请稍后重试。', 'maintenance', 503); }
   private profile(id?: string): Profile {
     const profile = this.store.profile(id);

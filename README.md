@@ -99,6 +99,7 @@ curl http://localhost:8765/v1/search \
 | [使用指南](docs/usage.md) | 供应商、搜索预设、key 管理、用量与余额 |
 | [客户端接入](docs/clients.md) | MCP 配置、HTTP API、分页与连接排查 |
 | [备份与迁移](docs/backup-migration.md) | 导出、导入、跨主机迁移及备份格式 |
+| [历史数据清理](docs/history-retention.md) | 自动保留期限、手动清理、计费记录与空间复用 |
 | [研究工作流](docs/research-workflow.md) | 多轮检索、证据读取、交叉核对与验收 |
 | [上游查询提示](docs/search-warnings.md) | 数量限制、截断和供应商警告的处理 |
 
@@ -106,7 +107,9 @@ curl http://localhost:8765/v1/search \
 
 搜索结果受上游覆盖范围、模式、数量和超时限制。网关负责检索与证据保存；问题拆解、多轮补搜和事实核对由调用方完成。多个供应商命中同一网页不代表多个独立来源。
 
-当前采用单进程 SQLite，适合单实例部署；不支持多个实例共用数据目录。历史记录没有自动清理策略。备份恢复会替换目标业务数据，操作前请阅读[迁移指南](docs/backup-migration.md)。
+当前采用单进程 SQLite，适合单实例部署；不支持多个实例共用数据目录。**默认开启自动清理，保留最近 7 天的搜索历史内容**，可在“备份与迁移 → 历史数据清理”修改或关闭。精简计费记录持续保留，累计用量和手动余额不受清理影响。[清理范围与空间说明](docs/history-retention.md)
+
+备份恢复会替换目标业务数据，操作前请阅读[迁移指南](docs/backup-migration.md)。
 
 **迁移后请检查 Parallel 的余额查询授权。** 如果显示授权失效，需要在目标实例重新通过 Parallel 官网授权。该授权用于查询余额，失效不代表搜索 API key 失效。
 

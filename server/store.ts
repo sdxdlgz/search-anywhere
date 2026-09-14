@@ -74,6 +74,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS calls_request ON calls(request_id);
       CREATE INDEX IF NOT EXISTS calls_key ON calls(key_id);
       CREATE INDEX IF NOT EXISTS requests_time ON requests(created_at);
+      CREATE INDEX IF NOT EXISTS collections_time ON collections(created_at);
       UPDATE calls SET status='error', error_code='interrupted' WHERE status='running';
       UPDATE requests SET status='error' WHERE status='running';
     `);
@@ -81,6 +82,10 @@ export class Store {
     for (const [name, type] of [['usage_json', 'TEXT'], ['paid', 'INTEGER'], ['transport', "TEXT DEFAULT 'api'"], ['fallback_reason', 'TEXT'], ['billing_scope', 'TEXT'], ['warnings_json', 'TEXT']]) {
       if (!callColumns.some(c => c.name === name)) this.db.exec(`ALTER TABLE calls ADD COLUMN ${name} ${type}`);
     }
+    this.db.exec(`CREATE INDEX IF NOT EXISTS calls_details_time ON calls(created_at) WHERE key_label IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS requests_history_time ON requests(created_at) WHERE query IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS calls_running ON calls(request_id) WHERE status='running';
+      CREATE INDEX IF NOT EXISTS requests_running ON requests(id) WHERE status='running';`);
     this.exaLedger = new ExaLedger(this);
     if (!this.get('SELECT id FROM settings WHERE id=1')) this.run('INSERT INTO settings VALUES(1, ?)', JSON.stringify({ default_profile: 'coverage', daily_call_limit: 0, usage_sync_minutes: 30 }));
     if (!this.get('SELECT id FROM profiles LIMIT 1')) this.seedProfiles();
@@ -112,8 +117,8 @@ export class Store {
     this.revision++;
     return value;
   }
-  settings(): Settings { return JSON.parse(this.get<{ value: string }>('SELECT value FROM settings WHERE id=1')!.value); }
-  saveSettings(s: Settings) { this.run('UPDATE settings SET value=? WHERE id=1', JSON.stringify(s)); this.revision++; }
+  settings(): Settings { return { history_retention: { enabled: true, days: 7 }, ...JSON.parse(this.get<{ value: string }>('SELECT value FROM settings WHERE id=1')!.value) }; }
+  saveSettings(s: Settings) { this.run('UPDATE settings SET value=? WHERE id=1', JSON.stringify({ ...this.settings(), ...s })); this.revision++; }
   key(id: string) { return this.get<StoredKey>('SELECT * FROM credentials WHERE id=?', id); }
   secret(key: StoredKey) { return this.vault.decrypt(key.secret); }
   managementSecret(account: string): string | undefined {
@@ -294,7 +299,7 @@ export class Store {
   }
   todayCalls() { return this.get<{ count: number }>("SELECT COUNT(*) count FROM calls WHERE created_at>=?", new Date().toISOString().slice(0, 10))!.count; }
   logs(limit = 50, offset = 0): RequestLog[] {
-    const rows = this.all<Omit<RequestLog, 'calls'> & { stored_providers: string | null }>('SELECT r.*,json_extract(c.value,\'$.providers\') AS stored_providers FROM requests r LEFT JOIN collections c ON c.id=r.id ORDER BY r.created_at DESC LIMIT ? OFFSET ?', limit, offset);
+    const rows = this.all<Omit<RequestLog, 'calls'> & { stored_providers: string | null }>('SELECT r.*,json_extract(c.value,\'$.providers\') AS stored_providers FROM requests r LEFT JOIN collections c ON c.id=r.id WHERE r.query IS NOT NULL ORDER BY r.created_at DESC LIMIT ? OFFSET ?', limit, offset);
     return rows.map(({ stored_providers, ...request }) => {
       const previous: ProviderOutcome[] = stored_providers ? JSON.parse(stored_providers) : [];
       const calls = this.all<CallLog & { usage_json: string | null; warnings_json: string | null }>('SELECT * FROM calls WHERE request_id=? ORDER BY created_at', request.id).map(({ usage_json, warnings_json, ...call }) => {

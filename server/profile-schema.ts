@@ -8,4 +8,8 @@ export const profileSchema = z.object({ id: z.string().regex(/^[a-z][a-z0-9_-]{0
   for (const provider of PROVIDERS) if (p.modes[provider] && !MODES[provider].includes(p.modes[provider]!)) ctx.addIssue({ code: 'custom', path: ['modes', provider], message: '该供应商不支持此模式' });
   if (!PROVIDERS.some(provider => p.modes[provider])) ctx.addIssue({ code: 'custom', path: ['modes'], message: '至少启用一家供应商' });
 });
-export const settingsSchema = z.object({ default_profile: z.string().max(50), daily_call_limit: z.number().int().min(0).max(1000000), usage_sync_minutes: z.number().int().min(0).max(1440) }).strict();
+export const retentionPolicySchema = z.object({ enabled: z.boolean(), days: z.number().int().min(1).max(3650) }).strict();
+const cleanupResultSchema = z.object({ completed_at: z.string().datetime(), cutoff: z.string().datetime(), source: z.enum(['manual', 'automatic']),
+  requests: z.number().int().nonnegative(), collections: z.number().int().nonnegative(), call_details: z.number().int().nonnegative(), content_bytes: z.number().nonnegative() }).strict();
+export const settingsSchema = z.object({ default_profile: z.string().max(50), daily_call_limit: z.number().int().min(0).max(1000000), usage_sync_minutes: z.number().int().min(0).max(1440),
+  history_retention: retentionPolicySchema.optional(), history_cleanup: cleanupResultSchema.optional() }).strict();

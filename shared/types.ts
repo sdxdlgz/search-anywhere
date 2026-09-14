@@ -71,7 +71,15 @@ export type SearchResponse = {
 export type ResultsInput = { collection_id: string; offset?: number; limit?: number };
 export type EvidenceInput = { collection_id: string; url: string; offset?: number; limit?: number };
 export type EvidenceResponse = { collection_id: string; url: string; evidence: Evidence[]; offset: number; next_offset: number | null; total_characters: number };
-export type Settings = { default_profile: string; daily_call_limit: number; usage_sync_minutes: number };
+export type CleanupCounts = { requests: number; collections: number; call_details: number; content_bytes: number };
+export type CleanupResult = CleanupCounts & { completed_at: string; cutoff: string; source: 'manual' | 'automatic' };
+export type CleanupPreview = CleanupCounts & { cutoff: string; expires_at: string; confirmation_token: string };
+export type RetentionStatus = {
+  policy: { enabled: boolean; days: number }; last_cleanup: CleanupResult | null; next_cleanup_at: string | null; last_error: string | null;
+  retained: CleanupCounts; storage: { database_bytes: number; wal_bytes: number; reusable_bytes: number };
+};
+export type Settings = { default_profile: string; daily_call_limit: number; usage_sync_minutes: number;
+  history_retention?: { enabled: boolean; days: number }; history_cleanup?: CleanupResult };
 export type BackupSummary = { created_at: string; format_version: number; keys: number; providers: Record<string, number>; login_sessions: number; profiles: number; access_tokens: number; calls: number; collections: number };
 export type BackupPreview = { summary: BackupSummary; confirmation_token: string };
 export type ParallelAuthorization = { id: string; user_code: string; verification_uri: string; expires_at: string; poll_after_seconds: number };

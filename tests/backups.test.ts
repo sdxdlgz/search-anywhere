@@ -127,6 +127,8 @@ test('M3: active search, quota and OAuth block backup; maintenance rejects write
       gate = new Promise<void>(resolve => { release = resolve; });
       const work = action(); await entered;
       await assert.rejects(f.backups.exclusive(async () => undefined), /正在进行/);
+      assert.throws(() => f.retention.preview(0), /正在进行/);
+      f.retention.tick(); assert.equal(f.store.settings().history_cleanup, undefined);
       release(); await work;
     }
     await f.backups.exclusive(async () => {
