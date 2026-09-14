@@ -7,6 +7,7 @@ import { PROVIDERS, type BackupSummary } from '../shared/types.js';
 import { profileSchema, settingsSchema } from './profile-schema.js';
 import { invalidBackup, MAX_PAYLOAD_BYTES } from './backup-crypto.js';
 import { GatewayError } from './upstream.js';
+import { backfillRequestCallers } from './token-usage.js';
 
 // The allowlist prevents importing SQL, browser sessions, host files or future tables.
 export const BACKUP_TABLES = ['credentials', 'account_secrets', 'keenable_sessions', 'anysearch_sessions', 'exa_sessions', 'parallel_sessions', 'oauth_clients', 'profiles', 'settings', 'client_tokens', 'requests', 'collections', 'calls', 'exa_balance_preferences', 'exa_balance_calibrations', 'exa_usage_blocks'] as const;
@@ -68,7 +69,11 @@ function checkRecords(data: BackupData) {
   const settings = settingsSchema.parse(JSON.parse(String(data.tables.settings[0].value)));
   if (!profiles.some(p => p.id === settings.default_profile)) throw invalidBackup();
   for (const preference of data.tables.exa_balance_preferences) if (preference.mode === 'manual' && !data.tables.exa_balance_calibrations.some(c => c.scope === preference.scope)) throw invalidBackup();
+  const owners = new Map(data.tables.requests.map(row => [row.id, row.caller_id]));
+  for (const owner of owners.values()) if (owner !== null && (typeof owner !== 'string' || !owner || owner.length > 128)) throw invalidBackup();
   for (const row of data.tables.collections) {
+    const owner = owners.get(row.id);
+    if (owner != null && owner !== row.caller_id) throw invalidBackup();
     const c = JSON.parse(String(row.value));
     if (c.collection_id !== row.id || !Array.isArray(c.results) || c.total_results !== c.results.length || !Array.isArray(c.providers)) throw invalidBackup();
     for (const r of c.results) if (typeof r.url !== 'string' || !canonicalUrl(r.url) || !Array.isArray(r.evidence) || r.evidence.some((e: { url?: unknown }) => typeof e.url !== 'string' || !canonicalUrl(e.url))) throw invalidBackup();
@@ -79,6 +84,8 @@ export function validateBackup(store: Store, value: unknown): BackupData {
   const memory = new DatabaseSync(':memory:');
   try {
     const data = schema.parse(value) as BackupData;
+    // Version 1 exports before client metering did not have this nullable column.
+    for (const row of data.tables.requests) if (!('caller_id' in row)) row.caller_id = null;
     for (const table of BACKUP_TABLES) {
       const names = columns(store, table);
       memory.exec(store.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", table)!.sql);
@@ -100,6 +107,7 @@ export function restoreBackup(store: Store, data: BackupData) {
   store.transaction(() => {
     for (const table of [...BACKUP_TABLES].reverse()) store.run(`DELETE FROM ${quote(table)}`);
     insertRows(store.db, store, data, true);
+    backfillRequestCallers(store);
     store.run("UPDATE calls SET status='error',error_code='interrupted' WHERE status='running'");
     store.run("UPDATE requests SET status='error' WHERE status='running'");
     if (store.all('PRAGMA foreign_key_check').length) throw invalidBackup();

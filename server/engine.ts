@@ -29,7 +29,7 @@ export class Engine {
     const profile = this.profile(input.profile);
     const count = input.max_results ?? profile.max_results;
     const cacheKey = hash(JSON.stringify([caller.id, input, count, profile, this.store.revision]));
-    const requestId = this.store.beginRequest(caller.name, options.forcedKeyId ? 'probe' : 'search', input.query, profile.id);
+    const requestId = this.store.beginRequest(caller.name, options.forcedKeyId ? 'probe' : 'search', input.query, profile.id, caller.id);
     const started = Date.now();
     try {
       const entry = this.cache.get(cacheKey);
@@ -179,7 +179,7 @@ export class Engine {
     const profile = this.profile(profileId), start = Date.now();
     if (this.active >= 24) throw new GatewayError('网关并发已满，请稍后重试。', 'busy', 429);
     this.active++;
-    const id = this.store.beginRequest(caller.name, 'fetch', url, profile.id);
+    const id = this.store.beginRequest(caller.name, 'fetch', url, profile.id, caller.id);
     const deadline = AbortSignal.timeout(profile.timeout_ms);
     const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
     try {

@@ -5,6 +5,7 @@ import { Vault, hash, mask, newToken } from './security.js';
 import { allocateKeyLabels } from './key-labels.js';
 import { ExaLedger } from './exa-ledger.js';
 import { savedWarnings } from './upstream-warnings.js';
+import { backfillRequestCallers, tokenUsage } from './token-usage.js';
 import { PROVIDERS, type CallLog, type Dashboard, type KeyPublic, type Profile, type Provider, type ProviderOutcome, type RequestLog, type RouteInfo, type SearchResponse, type Settings, type TokenPublic, type UsageSnapshot } from '../shared/types.js';
 
 export type StoredKey = {
@@ -64,7 +65,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS client_tokens (id TEXT PRIMARY KEY, name TEXT NOT NULL, masked TEXT NOT NULL, fingerprint TEXT UNIQUE NOT NULL, enabled INTEGER DEFAULT 1, created_at TEXT, last_used TEXT);
       CREATE TABLE IF NOT EXISTS sessions (fingerprint TEXT PRIMARY KEY, expires INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, caller TEXT, operation TEXT, query TEXT, profile TEXT, status TEXT, cache_hit INTEGER DEFAULT 0, duration_ms INTEGER DEFAULT 0, created_at TEXT);
+      CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, caller TEXT, operation TEXT, query TEXT, profile TEXT, status TEXT, cache_hit INTEGER DEFAULT 0, duration_ms INTEGER DEFAULT 0, created_at TEXT, caller_id TEXT);
       CREATE TABLE IF NOT EXISTS collections (id TEXT PRIMARY KEY, caller_id TEXT NOT NULL, value TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS calls (
         id TEXT PRIMARY KEY, request_id TEXT, provider TEXT, key_id TEXT, key_label TEXT, account TEXT, masked TEXT,
@@ -82,6 +83,9 @@ export class Store {
     for (const [name, type] of [['usage_json', 'TEXT'], ['paid', 'INTEGER'], ['transport', "TEXT DEFAULT 'api'"], ['fallback_reason', 'TEXT'], ['billing_scope', 'TEXT'], ['warnings_json', 'TEXT']]) {
       if (!callColumns.some(c => c.name === name)) this.db.exec(`ALTER TABLE calls ADD COLUMN ${name} ${type}`);
     }
+    if (!this.all<{ name: string }>('PRAGMA table_info(requests)').some(c => c.name === 'caller_id')) this.db.exec('ALTER TABLE requests ADD COLUMN caller_id TEXT');
+    this.db.exec('CREATE INDEX IF NOT EXISTS requests_caller_time ON requests(caller_id,created_at)');
+    backfillRequestCallers(this);
     this.db.exec(`CREATE INDEX IF NOT EXISTS calls_details_time ON calls(created_at) WHERE key_label IS NOT NULL;
       CREATE INDEX IF NOT EXISTS requests_history_time ON requests(created_at) WHERE query IS NOT NULL;
       CREATE INDEX IF NOT EXISTS calls_running ON calls(request_id) WHERE status='running';
@@ -262,7 +266,10 @@ export class Store {
     this.run('INSERT INTO client_tokens(id,name,masked,fingerprint,created_at) VALUES(?,?,?,?,?)', id, name, mask(token), hash(token), now());
     return { ...this.tokens().find(t => t.id === id)!, token };
   }
-  tokens(): TokenPublic[] { return this.all<Omit<TokenPublic, 'enabled'> & { enabled: number }>('SELECT id,name,masked,enabled,created_at,last_used FROM client_tokens ORDER BY created_at').map(t => ({ ...t, enabled: !!t.enabled })); }
+  tokens(): TokenPublic[] {
+    const usage = tokenUsage(this);
+    return this.all<Omit<TokenPublic, 'enabled'> & { enabled: number }>('SELECT id,name,masked,enabled,created_at,last_used FROM client_tokens ORDER BY created_at').map(t => ({ ...t, enabled: !!t.enabled, usage: usage.get(t.id)! }));
+  }
   authenticateToken(token: string): { id: string; name: string } | undefined {
     const row = this.get<{ id: string; name: string }>('SELECT id,name FROM client_tokens WHERE fingerprint=? AND enabled=1', hash(token));
     if (row) this.run('UPDATE client_tokens SET last_used=? WHERE id=?', now(), row.id);
@@ -272,9 +279,9 @@ export class Store {
   createSession() { const token = newToken('session'); this.run('INSERT INTO sessions VALUES(?,?)', hash(token), Date.now() + 86400000); return token; }
   validSession(token: string) { return !!this.get('SELECT 1 FROM sessions WHERE fingerprint=? AND expires>?', hash(token), Date.now()); }
   endSession(token: string) { this.run('DELETE FROM sessions WHERE fingerprint=?', hash(token)); }
-  beginRequest(caller: string, operation: string, query: string, profile: string): string {
+  beginRequest(caller: string, operation: string, query: string, profile: string, callerId?: string): string {
     const id = randomUUID();
-    this.run("INSERT INTO requests(id,caller,operation,query,profile,status,created_at) VALUES(?,?,?,?,?,'running',?)", id, caller, operation, query, profile, now());
+    this.run("INSERT INTO requests(id,caller,operation,query,profile,status,created_at,caller_id) VALUES(?,?,?,?,?,'running',?,?)", id, caller, operation, query, profile, now(), callerId ?? null);
     return id;
   }
   finishRequest(id: string, status: string, duration: number, cached = false) { this.run('UPDATE requests SET status=?,duration_ms=?,cache_hit=? WHERE id=?', status, duration, Number(cached), id); }

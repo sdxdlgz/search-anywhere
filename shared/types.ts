@@ -84,7 +84,14 @@ export type BackupSummary = { created_at: string; format_version: number; keys: 
 export type BackupPreview = { summary: BackupSummary; confirmation_token: string };
 export type ParallelAuthorization = { id: string; user_code: string; verification_uri: string; expires_at: string; poll_after_seconds: number };
 export type ParallelAuthPoll = { status: 'pending'; poll_after_seconds: number } | { status: 'connected' };
-export type TokenPublic = { id: string; name: string; masked: string; enabled: boolean; created_at: string; last_used: string | null };
+export type TokenUsagePeriod = {
+  requests: number; cache_hits: number; errors: number; partial: number; running: number;
+  upstream_calls: number; free_calls: number; unpriced_calls: number; running_calls: number;
+  reported_cost_usd: number | null; estimated_cost_usd: number | null;
+  credits_by_provider: { provider: Provider; reported: number | null; estimated: number | null }[];
+};
+export type TokenUsage = { lifetime: TokenUsagePeriod; month: TokenUsagePeriod; month_start: string };
+export type TokenPublic = { id: string; name: string; masked: string; enabled: boolean; created_at: string; last_used: string | null; usage?: TokenUsage };
 export type RequestLog = {
   id: string; caller: string; operation: string; query: string; profile: string; status: string;
   cache_hit: number; duration_ms: number; created_at: string; calls: CallLog[];

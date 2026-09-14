@@ -62,6 +62,7 @@ test('M1/M3: encrypted browser migration preserves every durable table, tokens, 
     assert.equal(target.store.managementSecret('same source note'), 'management-fixture-secret');
     assert.equal(target.store.exaLedger.manualUsage(keys[0].id)!.local_balance!.remaining_usd, remaining);
     assert.deepEqual(target.store.collection(search.collection_id, token.id), source.store.collection(search.collection_id, token.id));
+    assert.deepEqual(target.store.tokens()[0].usage, source.store.tokens()[0].usage);
     assert.deepEqual(target.store.all('SELECT rowid,id FROM calls ORDER BY rowid'), source.store.all('SELECT rowid,id FROM calls ORDER BY rowid'));
     const reopened = new Store(target.directory);
     try { assert.equal(reopened.keys().length, 5); assert.equal(reopened.loginTokens(reopened.loginSession(keys[4].id)!).refresh_token, 'fixture-refresh-token'); assert.equal(reopened.exaLedger.manualUsage(keys[0].id)!.local_balance!.remaining_usd, remaining); }
