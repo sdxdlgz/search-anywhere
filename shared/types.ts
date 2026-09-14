@@ -9,7 +9,7 @@ export const MODES: Record<Provider, string[]> = {
   anysearch: ['auto'],
   keenable: ['realtime', 'pro'],
 };
-export const PROVIDER_LIMITS: Record<Provider, number> = { exa: 100, parallel: 40, tavily: 20, anysearch: 20, keenable: 50 };
+export const PROVIDER_LIMITS: Record<Provider, number> = { exa: 100, parallel: 20, tavily: 20, anysearch: 20, keenable: 50 };
 export type Profile = {
   id: string; name: string; modes: Partial<Record<Provider, string | null>>;
   max_results: number; timeout_ms: number; cache_ttl_seconds: number; version: number;

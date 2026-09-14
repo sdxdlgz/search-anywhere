@@ -85,6 +85,8 @@ test('C1/C6: all five search adapters and coverage fetch retain versions and fai
     for (const p of PROVIDERS) f.add(p);
     const response = await f.engine.search({ query: 'all providers' }, caller);
     assert.equal(response.partial, false); assert.equal(response.providers.length, 5); assert.equal(response.total_results, 5);
+    assert.equal(response.providers.find(p => p.provider === 'exa')!.effective_limit, 100);
+    assert.equal(response.providers.find(p => p.provider === 'parallel')!.effective_limit, 20);
     assert.equal(response.providers.find(p => p.provider === 'tavily')!.effective_limit, 20);
     assert.equal(response.providers.find(p => p.provider === 'keenable')!.effective_limit, 50);
     const page = await f.engine.fetch('https://example.com/a', caller);

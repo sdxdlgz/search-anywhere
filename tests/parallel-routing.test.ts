@@ -3,6 +3,34 @@ import assert from 'node:assert/strict';
 import { caller, fixture, result, upstream } from './helpers.js';
 import { FREE_MCP, mcpResult, parallelMock } from './parallel-fixtures.js';
 
+test('P6: public API modes cap wire requests at 20 without reducing smaller requests or changing saved profiles', async () => {
+  const cases = ['turbo', 'fast', 'basic', 'advanced'].flatMap(mode =>
+    [[1, 1], [20, 20], [40, 20], [100, 20]].map(([requested, expected]) => ({ mode, requested, expected })));
+  const requests: { mode: string; count: number }[] = [];
+  const f = fixture(async (url, init) => {
+    assert.equal(url, 'https://api.parallel.ai/v1/search');
+    const body = JSON.parse(String(init?.body));
+    requests.push({ mode: body.mode, count: body.advanced_settings.max_results });
+    return Response.json({ results: Array.from({ length: body.advanced_settings.max_results }, (_, i) => result('parallel', `https://example.com/${i}`)) });
+  });
+  try {
+    f.add('parallel');
+    for (const { mode, requested, expected } of cases) {
+      f.store.saveProfile({ ...f.store.profile()!, modes: { parallel: mode }, per_provider_results: 100, cache_ttl_seconds: 0 });
+      const response = await f.engine.search({ query: `${mode} ${requested}`, per_provider_results: requested, max_results: 1 }, caller);
+      assert.deepEqual(requests.at(-1), { mode, count: expected });
+      assert.equal(response.providers[0].mode, mode);
+      assert.equal(response.providers[0].requested_results, requested);
+      assert.equal(response.providers[0].effective_limit, expected);
+      assert.equal(response.providers[0].limit_reached, true);
+      assert.equal(response.total_results, expected);
+      assert.equal(response.results.length, 1);
+      assert.deepEqual(response.providers[0].warnings, []);
+      assert.equal(f.store.profile()!.per_provider_results, 100);
+    }
+  } finally { await f.cleanup(); }
+});
+
 test('P1/P3: default ordinary routing needs no key, retains all results and reports actual fast mode and unknown result limit', async () => {
   const f = fixture(parallelMock(rpc => mcpResult(rpc, { results: Array.from({ length: 45 }, (_, i) => result('parallel', `https://example.com/${i}`)) })), 'balanced', 'free_first');
   try {
