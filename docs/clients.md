@@ -1,0 +1,174 @@
+# 客户端接入
+
+[返回 README](../README.md) · [使用指南](usage.md) · [部署与配置](deployment.md)
+
+Search Anywhere 提供搜索工具服务。模型推理服务单独配置；客户端负责将工具声明发送给支持工具调用的模型，并执行模型请求的搜索操作。
+
+## 准备连接参数
+
+在控制台 **客户端接入** 中创建搜索访问凭证。建议每个应用使用独立凭证，便于追踪与撤销；完整凭证只在创建时显示一次。管理员口令不能替代搜索访问凭证。
+
+本文使用 `https://search.example.com` 作为示例地址，`YOUR_SEARCH_TOKEN` 作为凭证占位符。
+
+| 参数 | 值 |
+| --- | --- |
+| MCP 地址 | `https://search.example.com/mcp` |
+| 传输方式 | Streamable HTTP |
+| HTTP 请求头 | `Authorization: Bearer YOUR_SEARCH_TOKEN` |
+| 工具调用超时 | 建议至少 180 秒 |
+
+本机服务可使用 `http://localhost:8765`。地址必须从实际执行工具的机器访问得到：手机、远程 Agent、网页应用后端或另一容器中的 `localhost` 不指向网关主机。
+
+下面的配置依据各客户端文档及公开实现整理。客户端版本和部署方式可能影响入口与超时限制，首次接入应完成一次真实工具调用验证。
+
+## 通用 MCP JSON
+
+支持该格式的客户端可导入：
+
+```json
+{
+  "mcpServers": {
+    "search-anywhere": {
+      "type": "http",
+      "url": "https://search.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_SEARCH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+网关提供 `search`、`search_results`、`get_evidence` 和 `fetch`。客户端可能给工具名称添加服务器前缀。
+
+## Claude Code
+
+添加用户级配置：
+
+```bash
+claude mcp add --transport http --scope user --header "Authorization: Bearer YOUR_SEARCH_TOKEN" search-anywhere https://search.example.com/mcp
+```
+
+重启后使用 `/mcp` 检查连接。较长的搜索调用建议将启动环境中的 `MCP_TOOL_TIMEOUT` 设为 `180000`，单位为毫秒。
+
+[Claude Code MCP 文档](https://code.claude.com/docs/en/mcp)
+
+## Codex
+
+在运行 Codex 的主机上，将以下配置合并到 `~/.codex/config.toml`，然后重启客户端：
+
+```toml
+[mcp_servers.search-anywhere]
+url = "https://search.example.com/mcp"
+http_headers = { Authorization = "Bearer YOUR_SEARCH_TOKEN" }
+startup_timeout_sec = 20
+tool_timeout_sec = 180
+```
+
+使用环境变量保存凭证时，可将 `http_headers` 一行替换为 `bearer_token_env_var = "SEARCH_ANYWHERE_TOKEN"`；该变量必须在 Codex 进程启动时可见。CLI 中可用 `/mcp` 检查连接。
+
+[OpenAI MCP 文档](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+
+## Hermes
+
+将以下内容合并到 `~/.hermes/config.yaml` 的 `mcp_servers` 下，重启对应进程：
+
+```yaml
+mcp_servers:
+  search-anywhere:
+    url: "https://search.example.com/mcp"
+    headers:
+      Authorization: "Bearer YOUR_SEARCH_TOKEN"
+    timeout: 180
+    connect_timeout: 20
+```
+
+模型供应商设置与 MCP 设置相互独立。[Hermes MCP 文档](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp)
+
+## LobeChat / LobeHub
+
+1. 在设置的技能页面或助理设置中打开 **添加自定义技能 / MCP**。
+2. 导入通用 JSON，或选择 **Streamable HTTP** 并填写 MCP 地址。
+3. 选择 API Key / Bearer 认证时，只填凭证本身；使用自定义请求头时填写完整的 `Authorization: Bearer …`。
+4. 测试连接并安装，然后在对应助理中启用该技能。
+
+菜单名称取决于版本。安装到工作区后仍需要为助理启用。[自定义 MCP 文档](https://github.com/lobehub/lobe-chat/blob/main/docs/usage/community/custom-mcp.zh-CN.mdx)
+
+## Kelivo
+
+1. 进入设置中的 MCP 页面，导入通用 JSON 或新增 HTTP / Streamable HTTP 服务。
+2. 地址填写 MCP URL，自定义请求头名为 `Authorization`，值为 `Bearer YOUR_SEARCH_TOKEN`。
+3. 连接后，在需要使用搜索的助手或会话中启用工具。
+4. 在 MCP 超时设置中将工具调用超时设为至少 180 秒。
+
+应通过 MCP 入口接入，不能将网关凭证填入内置 Tavily 或 Exa 配置栏。[Kelivo 配置格式](https://github.com/Chevey339/kelivo/blob/master/lib/core/services/mcp/mcp_config_import.dart)
+
+## DeepSeek Harness（DSH）
+
+使用官方 `@deepseek-ai/dsh-mcp-client` 插件，将以下片段合并到当前 profile 的 `cordis.patch.yml`。默认路径为 `~/.dsh/profiles/<profile>/cordis.patch.yml`；设置 `DSH_HOME` 时以该目录为准。
+
+```yaml
+- insert:
+    - id: mcp-search-anywhere
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: search-anywhere
+        transport: streamable-http
+        url: https://search.example.com/mcp
+        headers:
+          Authorization: "Bearer YOUR_SEARCH_TOKEN"
+        toolCallTimeoutMs: 180000
+```
+
+运行环境需要包含匹配版本的官方插件。保留已有 patch 内容，重载配置或重启后确认工具出现。
+
+[官方 MCP 客户端](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/mcp/mcp-client/README.md) · [Profile patch 说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/mcp-memory.md)
+
+## Pi
+
+Pi 核心不内置 MCP；可通过支持远程 HTTP 的 MCP 扩展连接网关，或编写 Pi 扩展调用下面的 HTTP API。本项目目前未提供专用 Pi 扩展。
+
+已有 MCP 扩展时，按该扩展的格式设置网关地址和 Authorization 请求头。[Pi 扩展机制](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/README.md#philosophy)
+
+## HTTP API
+
+所有接口均为 POST，使用 JSON 请求体和搜索访问凭证：
+
+```bash
+curl https://search.example.com/v1/search \
+  -H "Authorization: Bearer $SEARCH_ANYWHERE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"SQLite WAL 模式如何处理并发读写？","profile":"coverage","max_results":10}'
+```
+
+执行前将凭证写入当前进程可读取的 `SEARCH_ANYWHERE_TOKEN` 环境变量。
+
+| 路径 | 参数 | 用途 |
+| --- | --- | --- |
+| `/v1/search` | `query`；可选 `profile`、`max_results`、`per_provider_results`、`include_domains`、`exclude_domains` | 检索并返回结果集合 |
+| `/v1/results` | `collection_id`；可选 `offset`、`limit` | 读取结果的后续页 |
+| `/v1/evidence` | `collection_id`、`url`；可选 `offset`、`limit` | 按字符偏移读取逐来源证据 |
+| `/v1/fetch` | `url`；可选 `profile` | 请求正文并保存结果集合 |
+
+搜索响应中的 `collection_id` 用于后续读取；结果分页的 `next_offset` 为 `null` 时已到末页。`max_results` 是展示页大小，不是整个结果集合的上限。结果与证据读取使用创建集合的同一访问凭证。
+
+网关不提供模型 Chat Completions 接口，也不模拟供应商原生鉴权协议。只支持填写模型 API key 或固定搜索供应商 key 的应用，需要增加 HTTP 工具或 MCP 适配。
+
+## 验证与排查
+
+连接后确认可以发现四个工具，再执行一次搜索。例如：
+
+> 使用 search-anywhere 的 search，profile 设为 coverage，检索 SQLite WAL 模式的并发机制。继续读取结果分页和关键来源正文，最后附引用链接。
+
+在网关 **用量与日志** 中确认对应客户端产生调用记录。健康检查和工具列表只能证明连接/协议可用，不能验证上游检索质量。
+
+| 现象 | 检查项 |
+| --- | --- |
+| 401 | 使用搜索访问凭证，检查是否撤销，以及 Bearer 请求头是否完整 |
+| 403 / Origin 被拒绝 | 核对 HTTPS 反向代理；浏览器跨源直连时按需配置 `SA_ALLOWED_ORIGINS` |
+| 连接超时 | 检查实际工具执行端是否能访问 URL，特别是 localhost、容器网络和 SSH 隧道 |
+| 工具调用约 60 秒中断 | 调整客户端工具超时与反向代理读取超时 |
+| 已连接但模型不调用 | 确认当前助理启用了工具，模型及转发链支持工具调用，并显式指定该工具测试 |
+| 结果条数较少 | 读取结果分页，检查上游提示及搜索预设；不要将首页数量当作全部结果 |
+
+常规 API 查询提示和上游数量限制见[上游查询提示](search-warnings.md)。多轮检索、证据核对与结论生成由调用方完成，见[研究工作流](research-workflow.md)。
