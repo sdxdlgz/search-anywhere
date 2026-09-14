@@ -38,14 +38,22 @@ export function Keys({ data, run, updateUsage, onAdd, onEdit }: { data: Data; ru
     return () => clearTimeout(timer);
   }, [notice]);
   const release = (id: string) => setBusy(previous => { const next = { ...previous }; delete next[id]; return next; });
-  const queryUsage = (id: string) => api<UsageSnapshot>(`/keys/${id}/usage`, { method: 'POST' });
+  const queryUsage = async (id: string) => {
+    try { return await api<UsageSnapshot>(`/keys/${id}/usage`, { method: 'POST' }); }
+    finally {
+      if (data.keys.find(k => k.id === id)?.provider === 'exa') {
+        const updated = await api<KeyPublic>(`/keys/${id}/exa-balance`).catch(() => undefined);
+        if (updated) updateUsage(id, { usage: updated.usage, usage_error: updated.usage_error, exa_balance: updated.exa_balance });
+      }
+    }
+  };
   const record = (result: UsageRefreshResult) => {
     updateUsage(result.id, { ...(result.usage ? { usage: result.usage } : {}), usage_error: result.error || null });
     release(result.id);
   };
   const refreshOne = async (key: KeyPublic) => {
     setBusy(previous => ({ ...previous, [key.id]: 'usage' })); setNotice(null);
-    try { const usage = await queryUsage(key.id); record({ id: key.id, usage }); setNotice({ text: usage.status === 'ok' ? `仅 ${key.label} 的官方用量已刷新。` : `${key.label}：${usage.message}`, error: false }); }
+    try { const usage = await queryUsage(key.id); record({ id: key.id, usage }); setNotice({ text: usage.status === 'ok' ? `仅 ${key.label} 的${usage.source === 'estimated' ? '本地估算' : '官方用量'}已刷新。` : `${key.label}：${usage.message}`, error: false }); }
     catch (e) { const error = (e as Error).message; record({ id: key.id, error }); setNotice({ text: `${key.label}：${error}`, error: true }); }
   };
   const refreshBatch = async () => {
@@ -72,15 +80,15 @@ export function Keys({ data, run, updateUsage, onAdd, onEdit }: { data: Data; ru
       {notice && <div className={`notice ${notice.error ? 'warn' : 'subtle'}`} role={notice.error ? 'alert' : 'status'}>{notice.text}</div>}
       {batch && <div className="batch-results" aria-live="polite"><div className="batch-heading"><strong>{batch.running ? '批量查询中' : '批量查询完成'} · {batch.done} / {batch.total}</strong>{!batch.running && <button className="icon-button" aria-label="关闭批量查询提示" onClick={() => setBatch(null)}><X size={15}/></button>}</div><span>成功 {batch.results.filter(r => r.usage?.status === 'ok').length} · 失败 {batch.results.filter(r => r.error).length} · 未支持 / 待配置 {batch.results.filter(r => r.usage && r.usage.status !== 'ok').length}</span>{batch.results.some(r => r.error || r.usage?.status !== 'ok') && <small>未完成项的原因保留在对应 key 的官方用量栏，可单独重试。</small>}</div>}
       {data.keys.length === 0 ? <Empty title="把你的搜索密钥放在一起" onAdd={onAdd}>支持同一家供应商添加多个 key，原始密钥加密存储，保存后仅显示首尾片段。</Empty> : <div className="table-scroll"><table className="data-table key-table"><thead><tr>
-        <th className="selection-cell"><input type="checkbox" aria-label="选择当前筛选的全部密钥" checked={rows.length > 0 && rows.every(k => selected.has(k.id))} disabled={!rows.length || !!batch?.running} onChange={e => { const checked = e.target.checked; setSelected(previous => { const next = new Set(previous); rows.forEach(k => { if (checked) next.add(k.id); else next.delete(k.id); }); return next; }); }}/></th><th>渠道 / 密钥</th><th>账号归属</th><th>状态</th><th>网关记录</th><th>官方用量快照</th><th className="align-right">操作</th>
+        <th className="selection-cell"><input type="checkbox" aria-label="选择当前筛选的全部密钥" checked={rows.length > 0 && rows.every(k => selected.has(k.id))} disabled={!rows.length || !!batch?.running} onChange={e => { const checked = e.target.checked; setSelected(previous => { const next = new Set(previous); rows.forEach(k => { if (checked) next.add(k.id); else next.delete(k.id); }); return next; }); }}/></th><th>渠道 / 密钥</th><th>账号归属</th><th>状态</th><th>网关记录</th><th>额度与用量</th><th className="align-right">操作</th>
       </tr></thead><tbody>{rows.map(key => <tr key={key.id}>
         <td className="selection-cell"><input type="checkbox" aria-label={`选择 ${key.label}`} checked={selected.has(key.id)} disabled={!!batch?.running} onChange={e => toggle(key.id, e.target.checked)}/></td>
         <td><div className="key-identity"><ProviderMark provider={key.provider}/><div><strong>{key.label}</strong><code>{key.masked}</code><small className="cell-sub">添加于 <time dateTime={key.created_at} title={new Date(key.created_at).toLocaleString('zh-CN')}>{date(key.created_at)}</time></small></div></div></td>
         <td><div className="owner-cell"><UserRound size={14}/><span>{key.account}</span></div><small className="cell-sub">{providerName[key.provider]} · 并发 {key.max_concurrency}</small></td>
         <td><Badge state={key.state}/>{key.last_error && <small className="cell-error" title={key.last_error}>{key.last_error}</small>}</td>
         <td><strong className="tabular">累计调用 {number(key.calls)} 次</strong><small className="cell-sub">成功 {number(key.successes)} 次</small><LocalMeter metering={key.metering}/></td>
-        <td><Usage usage={key.usage} error={key.usage_error} metering={key.metering}/></td>
-        <td><div className="row-actions"><button className="button small" aria-label={`查询 ${key.label} 用量`} title="只查询这个 key 的官方用量，不执行搜索" disabled={!!busy[key.id]} onClick={() => void refreshOne(key)}>{busy[key.id] === 'usage' ? <Spinner/> : <RefreshCw size={15}/>}查询用量</button>{['keenable', 'anysearch', 'exa', 'parallel'].includes(key.provider) && <button className="icon-button" aria-label={`配置 ${key.label} 登录凭证`} title={key.keenable_login || key.anysearch_login || key.exa_login || key.parallel_login ? '管理官网登录凭证' : '配置官网登录凭证以查询余额'} disabled={!!busy[key.id]} onClick={() => setLogin(key)}><KeyRound size={15}/></button>}<button className="icon-button" aria-label={`测试 ${key.label}`} title="执行一次搜索测试，可能消耗额度" disabled={!!busy[key.id] || key.state !== 'ready'} onClick={() => void probe(key)}>{busy[key.id] === 'probe' ? <Spinner/> : <Play size={15}/>}</button><button className="icon-button" aria-label={`编辑 ${key.label}`} disabled={!!busy[key.id]} onClick={() => onEdit(key)}><Pencil size={15}/></button><button className="icon-button danger" aria-label={`删除 ${key.label}`} disabled={!!busy[key.id]} onClick={() => setRemove(key)}><Trash2 size={15}/></button></div></td>
+        <td><Usage usage={key.usage} error={key.usage_error} metering={key.metering} exaBalance={key.exa_balance}/></td>
+        <td><div className="row-actions"><button className="button small" aria-label={`查询 ${key.label} 用量`} title="只查询这个 key 的官方用量，不执行搜索" disabled={!!busy[key.id]} onClick={() => void refreshOne(key)}>{busy[key.id] === 'usage' ? <Spinner/> : <RefreshCw size={15}/>}查询用量</button>{['keenable', 'anysearch', 'exa', 'parallel'].includes(key.provider) && <button className="icon-button" aria-label={`配置 ${key.label} ${key.provider === 'exa' ? '余额' : '登录凭证'}`} title={key.provider === 'exa' ? '配置余额：官网查询或手动估算' : key.keenable_login || key.anysearch_login || key.parallel_login ? '管理官网登录凭证' : '配置官网登录凭证以查询余额'} disabled={!!busy[key.id]} onClick={() => setLogin(key)}><KeyRound size={15}/></button>}<button className="icon-button" aria-label={`测试 ${key.label}`} title="执行一次搜索测试，可能消耗额度" disabled={!!busy[key.id] || key.state !== 'ready'} onClick={() => void probe(key)}>{busy[key.id] === 'probe' ? <Spinner/> : <Play size={15}/>}</button><button className="icon-button" aria-label={`编辑 ${key.label}`} disabled={!!busy[key.id]} onClick={() => onEdit(key)}><Pencil size={15}/></button><button className="icon-button danger" aria-label={`删除 ${key.label}`} disabled={!!busy[key.id]} onClick={() => setRemove(key)}><Trash2 size={15}/></button></div></td>
       </tr>)}</tbody></table>{!rows.length && <div className="table-empty">没有匹配的密钥。</div>}</div>}
       <div className="table-foot"><span><ShieldCheck size={14}/>已保存的 key 不提供明文查看或导出</span><span>{rows.length} 个密钥</span></div>
     </section><div className="usage-toolbar panel"><div><strong>自动同步：{data.settings.usage_sync_minutes ? `每 ${data.settings.usage_sync_minutes} 分钟` : '已关闭'}</strong><small>定时同步独立运行，不由单行按钮或页面刷新触发；间隔可在“客户端接入”调整。</small></div>{!!data.settings.usage_sync_minutes && <button className="button small" onClick={() => void run(() => api('/settings', { method: 'PUT', body: json({ ...data.settings, usage_sync_minutes: 0 }) }), '自动用量同步已暂停；单个和批量查询仍可使用')}>暂停自动同步</button>}</div>

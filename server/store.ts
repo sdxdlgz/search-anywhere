@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { Vault, hash, mask, newToken } from './security.js';
 import { allocateKeyLabels } from './key-labels.js';
+import { ExaLedger } from './exa-ledger.js';
 import { PROVIDERS, type CallLog, type Dashboard, type KeyPublic, type Profile, type Provider, type RequestLog, type RouteInfo, type SearchResponse, type Settings, type TokenPublic, type UsageSnapshot } from '../shared/types.js';
 
 export type StoredKey = {
@@ -24,6 +25,7 @@ const now = () => new Date().toISOString();
 export class Store {
   readonly db: DatabaseSync;
   readonly vault: Vault;
+  readonly exaLedger: ExaLedger;
   revision = 0;
   readonly inflight = new Map<string, number>();
   constructor(readonly directory: string) {
@@ -74,9 +76,10 @@ export class Store {
       UPDATE requests SET status='error' WHERE status='running';
     `);
     const callColumns = this.all<{ name: string }>('PRAGMA table_info(calls)');
-    for (const [name, type] of [['usage_json', 'TEXT'], ['paid', 'INTEGER'], ['transport', "TEXT DEFAULT 'api'"], ['fallback_reason', 'TEXT']]) {
+    for (const [name, type] of [['usage_json', 'TEXT'], ['paid', 'INTEGER'], ['transport', "TEXT DEFAULT 'api'"], ['fallback_reason', 'TEXT'], ['billing_scope', 'TEXT']]) {
       if (!callColumns.some(c => c.name === name)) this.db.exec(`ALTER TABLE calls ADD COLUMN ${name} ${type}`);
     }
+    this.exaLedger = new ExaLedger(this);
     if (!this.get('SELECT id FROM settings WHERE id=1')) this.run('INSERT INTO settings VALUES(1, ?)', JSON.stringify({ default_profile: 'coverage', daily_call_limit: 0, usage_sync_minutes: 30 }));
     if (!this.get('SELECT id FROM profiles LIMIT 1')) this.seedProfiles();
     if (!this.profile('coverage')) this.saveProfile({ id: 'coverage', name: '覆盖优先', modes: { exa: 'deep-reasoning', parallel: 'advanced', tavily: 'advanced', anysearch: 'auto', keenable: 'pro' }, max_results: 10, per_provider_results: 100, fetch_strategy: 'parallel', timeout_ms: 120000, cache_ttl_seconds: 0, version: 1 });
@@ -226,7 +229,8 @@ export class Store {
         last_used: k.last_used, created_at: k.created_at, max_concurrency: k.max_concurrency, exa_key_id: k.exa_key_id,
         has_management_key: !!this.get('SELECT 1 FROM account_secrets WHERE provider=? AND account=?', k.provider, k.account),
         ...(login ? { [`${k.provider}_login`]: { expires_at: login.expires_at, needs_login: !!login.needs_login, ...(k.provider === 'exa' ? { team_id: this.exaLogin(login).team_id } : {}), ...(k.provider === 'parallel' ? { org_id: this.parallelTokens(login).org_id, org_name: this.parallelTokens(login).org_name } : {}) } } : {}),
-        ...stats, metering: { month, ...metering }, usage: k.usage_json ? JSON.parse(k.usage_json) : null, usage_error: k.usage_error };
+        ...(k.provider === 'exa' ? { exa_balance: this.exaLedger.publicState(k) } : {}),
+        ...stats, metering: { month, ...metering }, usage: this.exaLedger.isManual(k.id) ? this.exaLedger.manualUsage(k.id)! : k.usage_json ? JSON.parse(k.usage_json) : null, usage_error: this.exaLedger.isManual(k.id) ? null : k.usage_error };
     });
   }
   reserve(provider: Provider, excluded: string[] = [], forcedId?: string): StoredKey | undefined {
@@ -276,7 +280,7 @@ export class Store {
     const limit = this.settings().daily_call_limit;
     if (limit > 0 && this.todayCalls() >= limit) return;
     const id = randomUUID();
-    this.run("INSERT INTO calls(id,request_id,provider,key_id,key_label,account,masked,mode,operation,status,created_at,transport,fallback_reason) VALUES(?,?,?,?,?,?,?,?,?,'running',?,?,?)", id, requestId, key.provider, key.id, key.label, key.account, key.masked, mode, operation, now(), route.transport ?? 'api', route.fallback_reason ?? null);
+    this.run("INSERT INTO calls(id,request_id,provider,key_id,key_label,account,masked,mode,operation,status,created_at,transport,fallback_reason,billing_scope) VALUES(?,?,?,?,?,?,?,?,?,'running',?,?,?,?)", id, requestId, key.provider, key.id, key.label, key.account, key.masked, mode, operation, now(), route.transport ?? 'api', route.fallback_reason ?? null, key.provider === 'exa' && key.id ? this.exaLedger.scope(key.id) : null);
     return id;
   }
   finishCall(id: string, data: { status: string; duration_ms: number; result_count?: number; http_status?: number | null; error_code?: string | null; cost_usd?: number | null; credits?: number | null; paid?: boolean | null; billing_source?: string; usage_items?: { name: string; count: number }[] }) {

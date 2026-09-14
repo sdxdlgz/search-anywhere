@@ -16,11 +16,12 @@ export type Profile = {
   per_provider_results?: number; fetch_strategy?: 'fallback' | 'parallel'; parallel_transport?: 'free_first' | 'api';
 };
 export type UsageSnapshot = {
-  status: 'ok' | 'needs_setup' | 'unsupported'; source: 'official' | 'unknown';
+  status: 'ok' | 'needs_setup' | 'unsupported'; source: 'official' | 'unknown' | 'estimated';
   synced_at: string; message?: string; period?: string;
   key?: { used: number; limit: number | null };
   account?: { plan: string; used: number; limit: number; paygo_used: number; paygo_limit: number | null };
   cost_usd?: number;
+  local_balance?: { scope: string; baseline_usd: number; remaining_usd: number; deducted_usd: number; reported_usd: number; estimated_usd: number; unpriced_calls: number; calibrated_at: string };
   organization_balance?: { credits_cents: number; pending_debit_cents: number; postpaid: boolean; scope: string };
   money_balance?: {
     credits_cents: number; invoice_debt_cents: number; available_cents: number; scope: string;
@@ -43,6 +44,7 @@ export type KeyPublic = {
   keenable_login?: { expires_at: string; needs_login: boolean };
   anysearch_login?: { expires_at: string; needs_login: boolean };
   exa_login?: { expires_at: string; needs_login: boolean; team_id: string };
+  exa_balance?: { mode: 'official' | 'manual'; team_id: string; pause_reason?: 'challenge' | 'rate_limited'; auto_paused?: boolean; retry_at?: string | null };
   parallel_login?: { expires_at: string; needs_login: boolean; org_id: string; org_name: string };
   metering: { month: string; reported_credits: number; reported_calls: number; estimated_credits: number; estimated_calls: number; unreported_calls: number };
 };

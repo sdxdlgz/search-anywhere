@@ -10,9 +10,9 @@ def check_exa_login(page, artifacts):
     row = page.locator('tr').filter(has=page.get_by_text('Browser Exa', exact=True))
 
     def open_login():
-        page.get_by_role('button', name='配置 Browser Exa 登录凭证', exact=True).click()
+        page.get_by_role('button', name='配置 Browser Exa 余额', exact=True).click()
         dialog = page.get_by_role('dialog')
-        expect(dialog.get_by_role('heading', name='Exa 登录凭证')).to_be_visible()
+        expect(dialog.get_by_role('heading', name='Exa 余额配置')).to_be_visible()
         expect(dialog.get_by_label('会话 Cookie', exact=True)).to_have_attribute('type', 'password')
         expect(dialog.get_by_label('会话 Cookie', exact=True)).to_have_value('')
         return dialog

@@ -6,10 +6,14 @@ import { Empty, ProviderMark, providerName } from '../components';
 export function ChannelQuotas({ keys, onAdd }: { keys: KeyPublic[]; onAdd: () => void }) {
   const channels = channelQuotas(keys);
   return <section className="panel channel-quota-panel" aria-label="渠道额度">
-    <div className="panel-heading"><div><h2>渠道额度</h2><p>按渠道累计已知额度；来源备注不参与计算，官网登录接口确认的共享额度仅累计一次。</p></div><span className="counter">{channels.length} 个渠道</span></div>
+    <div className="panel-heading"><div><h2>渠道额度</h2><p>按渠道累计已知额度；来源备注不参与计算，共享团队仅累计一次，手动余额单独标为估算。</p></div><span className="counter">{channels.length} 个渠道</span></div>
     {!channels.length ? <Empty title="连接你的第一个搜索渠道" onAdd={onAdd}>添加密钥，即可汇总各渠道额度。</Empty> : <div>{channels.map(channel => <div className="channel-quota-row" key={channel.provider}>
       <div className="channel-quota-name"><ProviderMark provider={channel.provider}/><div><strong>{providerName[channel.provider]}</strong><small>{channel.keyCount} 个 key · 已知额度 {channel.knownCount} / {channel.keyCount}</small></div></div>
-      {channel.organizationTotals ? <dl className="channel-quota-values">
+      {channel.manualCount ? <dl className="channel-quota-values">
+        <div><dt>已知余额（含估算）</dt><dd>{usd(channel.manualTotal + (channel.moneyTotals?.available || 0))} <small>USD</small></dd></div>
+        <div><dt>本地估算 · {channel.manualCount} 组</dt><dd>{usd(channel.manualTotal)}</dd></div>
+        <div><dt>其他团队官方快照</dt><dd>{channel.moneyTotals ? usd(channel.moneyTotals.available) : '无'}</dd></div>
+      </dl> : channel.organizationTotals ? <dl className="channel-quota-values">
         <div><dt>授权组织预付余额</dt><dd>{channel.organizationTotals.prepaid ? <>{usd(channel.organizationTotals.credits)} <small>USD</small></> : '后付费'}</dd></div>
         <div><dt>待扣 / 占用（单列）</dt><dd>{channel.organizationTotals.prepaid ? usd(channel.organizationTotals.pending) : '按账单结算'}</dd></div>
         <div><dt>计费组织</dt><dd>{channel.organizationTotals.prepaid} <small>预付 · {channel.organizationTotals.postpaid} 后付</small></dd></div>
@@ -26,6 +30,8 @@ export function ChannelQuotas({ keys, onAdd }: { keys: KeyPublic[]; onAdd: () =>
         <span>{channel.oldestSnapshot ? `最早快照 ${date(channel.oldestSnapshot)}` : '在密钥页面查询用量'}{channel.totals && channel.totals.paygoUsed > 0 ? ` · 按量已用 ${number(channel.totals.paygoUsed)} credits（另计）` : ''}</span>
         {channel.paidRemaining !== null && <span>付费余额 {number(channel.paidRemaining)} credits（另计）</span>}
         {channel.sharedCount > 0 && <span>{channel.sharedCount} 份共享额度未重复累计</span>}
+        {channel.manualCount > 0 && <span>本地估算仅扣本网关费用；外部变动需重新校准</span>}
+        {channel.pausedCount > 0 && <span>{channel.pausedCount} 个官网查询已暂停，可手动校准或单独重试</span>}
         {channel.resetPeriods.length > 0 && <span>{channel.resetPeriods.length > 1 ? '各账号按各自周期重置' : channel.resetPeriods[0] === 'daily' ? '每日重置' : channel.resetPeriods[0] === 'monthly' ? '每月重置' : '无定期重置'}</span>}
         <span className={channel.failedCount ? 'text-warn' : ''}>{channel.knownCount < channel.keyCount ? `${channel.keyCount - channel.knownCount} 个 key 的额度未知` : ''}{channel.failedCount ? ` · ${channel.failedCount} 个查询失败，已有快照暂保留` : ''}</span>
       </div>

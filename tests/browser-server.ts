@@ -23,6 +23,7 @@ const f = fixture(async (url, init) => {
     if (url.endsWith('/token') && authorizations === 1) return Response.json({ error: 'access_denied' }, { status: 400 });
     return accountMock(url, init);
   }
+  if (url === EXA_SITE + '/api/auth/session' && new Headers(init?.headers).get('Cookie')?.includes('fixture-browser-challenge')) return new Response('Vercel Security Checkpoint', { status: 429, headers: { 'x-vercel-mitigated': 'challenge', 'Content-Type': 'text/html' } });
   if (url === EXA_SITE + '/api/auth/session' && new Headers(init?.headers).get('Cookie')?.includes('fixture-browser-expired')) return Response.json({});
   if (url.startsWith(EXA_SITE + '/api/') || url === 'https://api.exa.ai/v0/teams/me') return exaUpstream(url, init);
   if (url === `${ANY_BASE}/api/auth/refresh` && JSON.parse(String(init?.body)).refresh_token === 'fixture-any-invalid-login') return Response.json({ code: 40141 }, { status: 401 });

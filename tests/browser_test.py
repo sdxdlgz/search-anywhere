@@ -7,6 +7,7 @@ from keenable_browser_checks import check_keenable_login
 from anysearch_browser_checks import check_anysearch_login
 from exa_browser_checks import check_exa_login
 from parallel_browser_checks import check_parallel
+from exa_manual_browser_checks import check_exa_manual
 
 BASE = "http://127.0.0.1:8876"
 ARTIFACTS = Path(__file__).resolve().parents[1] / "test-results"
@@ -142,6 +143,7 @@ with sync_playwright() as p:
     page.screenshot(path=str(ARTIFACTS / "channel-quotas.png"), animations="disabled")
     page.screenshot(path=str(ARTIFACTS / "overview-populated.png"), full_page=True, animations="disabled")
     check_parallel(page, ARTIFACTS, expected_errors)
+    check_exa_manual(page, ARTIFACTS, expected_errors)
     page.set_viewport_size({"width": 390, "height": 844})
     page.screenshot(path=str(ARTIFACTS / "mobile-overview.png"), full_page=True, animations="disabled")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Horizontal page overflow"

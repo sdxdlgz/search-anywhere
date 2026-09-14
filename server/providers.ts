@@ -6,6 +6,7 @@ import type { StoredKey, Store } from './store.js';
 import { KeenableBalance } from './keenable-balance.js';
 import { AnySearchBalance } from './anysearch-balance.js';
 import { ExaBalance } from './exa-balance.js';
+import { estimateExaCost } from './exa-ledger.js';
 import { parallelFreeMcp } from './parallel-mcp.js';
 import { ParallelBalance } from './parallel-balance.js';
 import { boundedBody, GatewayError, responseError, type HttpFetch } from './upstream.js';
@@ -81,12 +82,14 @@ export class Providers {
     if (results.some(r => r.truncated)) warnings.push('部分文本被上游或本地 100,000 字符存储限制截断。');
     if (Array.isArray(data.warnings) && data.warnings.length) warnings.push(`上游报告 ${data.warnings.length} 项警告；本次检索可能受限制。`);
     if (Array.isArray(data.errors) && data.errors.length) warnings.push(`上游报告 ${data.errors.length} 项提取失败。`);
-    const cost = num(obj(data.costDollars).total);
+    const reportedCost = num(obj(data.costDollars).total);
+    const localCost = provider === 'exa' ? estimateExaCost(mode, operation, data.results.length) : null;
+    const cost = reportedCost ?? localCost;
     const credits = num(obj(data.usage).credits);
     const units = Array.isArray(data.usage) ? data.usage.map(obj).filter(u => text(u.name) && num(u.count) !== null).map(u => ({ name: text(u.name).slice(0, 100), count: num(u.count)! })) : [];
     const estimate = provider === 'tavily' && operation === 'search' ? mode === 'advanced' ? 2 : 1 : null;
     return { results, warnings, cost_usd: cost, credits: credits ?? estimate, usage_items: units,
-      billing_source: cost !== null || credits !== null || units.length > 0 ? 'reported' : estimate !== null ? 'estimated' : 'unknown' };
+      billing_source: reportedCost !== null || credits !== null || units.length > 0 ? 'reported' : localCost !== null || estimate !== null ? 'estimated' : 'unknown' };
   }
   async search(key: StoredKey, mode: string, input: SearchInput, count: number, signal: AbortSignal): Promise<ProviderData> {
     count = Math.min(count, PROVIDER_LIMITS[key.provider]);
@@ -175,6 +178,8 @@ export class Providers {
     if (key.provider === 'anysearch') return this.anysearchBalance.usage(key);
     if (key.provider === 'parallel') return this.parallelBalance.usage(key);
     if (key.provider === 'exa') {
+      const manual = this.store.exaLedger.manualUsage(key.id);
+      if (manual) return manual;
       if (this.store.loginSession(key.id)) return this.exaBalance.usage(key);
       const service = this.store.managementSecret(key.account);
       if (!service || !key.exa_key_id) return { status: 'needs_setup', source: 'unknown', synced_at, message: '配置 Exa 官网会话 Cookie 与 Team ID 可查询余额；或配置 Service Key 和搜索 key ID，查询本月已用费用。' };

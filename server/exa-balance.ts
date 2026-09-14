@@ -1,6 +1,6 @@
 import { hash } from './security.js';
 import type { ExaLogin, Store, StoredKey, StoredLoginSession } from './store.js';
-import { boundedBody, GatewayError, type HttpFetch } from './upstream.js';
+import { boundedBody, GatewayError, responseError, type HttpFetch } from './upstream.js';
 import { updatedExaCookie } from './exa-cookies.js';
 import type { UsageSnapshot } from '../shared/types.js';
 
@@ -44,12 +44,25 @@ export class ExaBalance {
         headers: searchKey ? { 'x-api-key': searchKey, Accept: 'application/json' } : { Cookie: context.login.cookie, Accept: 'application/json' },
       });
       this.current(context);
+      const shield = response.headers.get('x-vercel-mitigated') === 'challenge' ? 'Vercel' : response.headers.get('cf-mitigated') === 'challenge' ? 'Cloudflare' : null;
+      if (shield) {
+        await response.body?.cancel();
+        const message = `Exa 官网要求 ${shield} 浏览器验证，自动余额查询已暂停。可在官网查看余额后手动校准，或稍后单独重试；搜索 key 不受影响。`;
+        this.store.exaLedger.pause(context.session.key_id, 'challenge', message);
+        throw new GatewayError(message, 'exa_browser_challenge', 503);
+      }
       if (!searchKey) {
         const updated = updatedExaCookie(context.login.cookie, response.headers);
         if (updated.changed) this.persist(context, updated.cookie);
       }
       if (!response.ok) {
         await response.body?.cancel();
+        if (response.status === 429) {
+          const delay = responseError(response).cooldownMs;
+          const message = 'Exa 余额接口暂时限流，已按服务端要求暂停重试；可使用本地余额估算。';
+          this.store.exaLedger.pause(context.session.key_id, 'rate_limited', message, new Date(Date.now() + delay).toISOString());
+          throw new GatewayError(message, 'exa_usage_rate_limited', 429, false, delay);
+        }
         if (!searchKey && (response.status === 401 || (response.status >= 300 && response.status < 400))) throw expired();
         const message = searchKey ? 'Exa 无法核对搜索 key 所属团队' : response.status === 403 ? 'Exa 官网会话没有此团队的余额读取权限' : 'Exa 余额服务请求失败';
         throw new GatewayError(`${message}（HTTP ${response.status}）。`, response.status === 429 ? 'rate_limited' : 'exa_http_error', response.status);
@@ -65,6 +78,8 @@ export class ExaBalance {
   }
 
   private async query(key: StoredKey): Promise<UsageSnapshot> {
+    const block = this.store.exaLedger.block(key.id);
+    if (block?.reason === 'rate_limited' && block.retry_at && Date.parse(block.retry_at) > Date.now()) throw new GatewayError(block.message, 'exa_usage_rate_limited', 429);
     const session = this.store.loginSession(key.id);
     if (!session) return { status: 'needs_setup', source: 'unknown', synced_at: new Date().toISOString(), message: '请配置 Exa 官网会话 Cookie 与 Team ID 以查询余额。' };
     if (session.needs_login) throw expired();
@@ -83,7 +98,9 @@ export class ExaBalance {
       const plan = await this.request(context, '/api/orb/get-orb-plan');
       const balance = await this.request(context, '/api/get-credits');
       this.current(context);
-      return exaBalanceSnapshot(balance, plan, teamId);
+      const snapshot = exaBalanceSnapshot(balance, plan, teamId);
+      this.store.exaLedger.clearBlock(key.id);
+      return snapshot;
     } catch (error) {
       this.current(context);
       if (error instanceof GatewayError && ['exa_login_expired', 'exa_team_mismatch'].includes(error.code)) this.store.invalidateLoginSession(context.session);

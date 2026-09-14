@@ -28,11 +28,14 @@ export function Modal({ title, subtitle, children, onClose, wide = false }: { ti
     <div className="modal-head"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div><button className="icon-button" aria-label="关闭对话框" onClick={onClose}><X size={20}/></button></div>{children}
   </dialog>;
 }
-export function Usage({ usage, error, metering }: { usage: UsageSnapshot | null; error: string | null; metering?: KeyPublic['metering'] }) {
-  if (!usage) return <div className="quota-cell"><span className="text-muted">{error ? '同步失败' : '尚未同步'}</span>{error && <small className="text-warn">{error}</small>}</div>;
+export function Usage({ usage, error, metering, exaBalance }: { usage: UsageSnapshot | null; error: string | null; metering?: KeyPublic['metering']; exaBalance?: KeyPublic['exa_balance'] }) {
+  const challenged = exaBalance?.pause_reason === 'challenge';
+  const issue = error && (challenged ? <details><summary>官网需浏览器验证 · 自动查询暂停</summary><small>{error}</small></details> : <small className="text-warn">{error}{usage?.status === 'ok' ? ' · 显示上次快照' : ''}</small>);
+  if (!usage) return <div className="quota-cell"><span className="text-muted">{challenged ? '可手动校准余额' : error ? '同步失败' : '尚未同步'}</span>{issue}</div>;
   const checkedAt = new Date(usage.synced_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  if (usage.status !== 'ok') return <div className="quota-cell" title={usage.message}><span className="text-muted">{usage.status === 'needs_setup' ? '待配置凭证' : '仅本地统计'}</span><small>{usage.status === 'needs_setup' ? usage.message : '官方额度未知'}</small><small>检查于 {checkedAt}</small>{error && <small className="text-warn">{error}</small>}</div>;
+  if (usage.status !== 'ok') return <div className="quota-cell" title={usage.message}><span className="text-muted">{usage.status === 'needs_setup' ? '待配置凭证' : '仅本地统计'}</span><small>{usage.status === 'needs_setup' ? usage.message : '官方额度未知'}</small><small>检查于 {checkedAt}</small>{issue}</div>;
   return <div className="quota-cell" title={`${usage.message || '官方用量'} · ${date(usage.synced_at)}${error ? ' · 最近同步失败，显示旧数据' : ''}`}>
+    {usage.local_balance && <><span>本地估算 ${usage.local_balance.remaining_usd.toFixed(6)}</span><small>校准余额 ${usage.local_balance.baseline_usd.toFixed(6)} · 已扣 ${usage.local_balance.deducted_usd.toFixed(6)}</small><small>校准于 {date(usage.local_balance.calibrated_at)}</small><small>仅本网关费用 · 官网自动查询暂停</small>{usage.local_balance.unpriced_calls > 0 && <small className="text-warn">{usage.local_balance.unpriced_calls} 次费用未知，尚未计入扣减</small>}</>}
     {usage.key && <><span>官方 key 已用 {number(usage.key.used)} credits</span><small>key 上限 {usage.key.limit === null ? '未提供' : number(usage.key.limit)}{usage.key.limit === null ? '' : ` · 剩余 ${number(Math.max(0, usage.key.limit - usage.key.used))}`}</small></>}
     {usage.account && <><span>账号套餐已用 {number(usage.account.used)} / {number(usage.account.limit)}</span><small>套餐剩余 {number(Math.max(0, usage.account.limit - usage.account.used))} credits · 同账号共享</small><small>按量已用 {number(usage.account.paygo_used)} · 上限 {usage.account.paygo_limit === null ? '未提供' : number(usage.account.paygo_limit)}</small></>}
     {usage.balance && <><span>免费额度 {number(usage.balance.free_limit)} credits</span><small>已计费消耗 {number(usage.balance.charged_used)} · 免费剩余 {number(usage.balance.free_remaining)}</small><small>付费余额 {number(usage.balance.paid_remaining)} credits</small></>}
@@ -40,9 +43,9 @@ export function Usage({ usage, error, metering }: { usage: UsageSnapshot | null;
     {usage.cost_usd !== undefined && <><span>${usage.cost_usd.toFixed(4)}</span><small>本月已用费用</small></>}
     {usage.organization_balance && <>{usage.organization_balance.postpaid ? <><span>后付费组织</span><small>按账单结算，不以预付余额判断额度</small></> : <><span>授权组织余额 {usd(usage.organization_balance.credits_cents)}</span><small>待扣 / 占用 {usd(usage.organization_balance.pending_debit_cents)}（单列）</small></>}<small>组织额度，不代表此 key 的独立余额</small></>}
     {usage.money_balance && <><span>官网余额 {usd(usage.money_balance.available_cents)}</span><small>账面额度 {usd(usage.money_balance.credits_cents)} · 未结算账单 {usd(usage.money_balance.invoice_debt_cents)}</small>{usage.money_balance.expiring.length > 0 && <details><summary>{usage.money_balance.expiring.length} 笔额度有到期时间（已含在余额中）</summary>{usage.money_balance.expiring.map((entry, i) => <small key={i}>{usd(entry.balance_cents)} 到期于 <time dateTime={entry.expires_at}>{new Date(entry.expires_at).toLocaleString('zh-CN')}</time></small>)}</details>}</>}
-    <small>查询于 {checkedAt}</small>
+    {!usage.local_balance && <small>查询于 {checkedAt}</small>}
     {usage.key?.used === 0 && (metering?.reported_credits || 0) > 0 && <small className="usage-difference">网关本月已记录 {number(metering?.reported_credits)} credits，官方 key 快照为 0。更新时间或统计范围可能不同。</small>}
-    {error && <small className="text-warn">{error} · 显示上次快照</small>}
+    {issue}
   </div>;
 }
 export function External({ href, children }: { href: string; children: ReactNode }) { return <a className="text-link" href={href} target="_blank" rel="noreferrer noopener">{children}<ArrowUpRight size={13}/></a>; }

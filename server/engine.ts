@@ -197,6 +197,8 @@ export class Engine {
     return { ...pageOf(response, 0, profile.max_results), url, provider: first.outcome.provider };
   }
   async syncUsage(id: string): Promise<UsageSnapshot> {
+    const manual = this.store.exaLedger.manualUsage(id);
+    if (manual) return manual;
     if (this.syncing.has(id)) return this.syncing.get(id)!;
     const key = this.store.key(id);
     if (!key) throw new GatewayError('密钥不存在。', 'not_found', 404);
@@ -220,12 +222,14 @@ export class Engine {
   }
   private usageContext(key?: StoredKey): string {
     return key ? hash(JSON.stringify([key.account, key.exa_key_id, key.provider === 'exa' ? this.store.managementSecret(key.account) : null,
+      key.provider === 'exa' ? this.store.exaLedger.preference(key.id)?.version : null,
       ['keenable', 'anysearch', 'exa', 'parallel'].includes(key.provider) ? this.store.loginSession(key.id)?.generation : null])) : '';
   }
   async syncDueUsage() {
     const interval = this.store.settings().usage_sync_minutes * 60000;
     if (!interval) return;
     const due = this.store.keys().filter(k => {
+      if (k.provider === 'exa' && this.store.exaLedger.autoPaused(k.id)) return false;
       const login = k.keenable_login || k.anysearch_login || k.exa_login || k.parallel_login;
       return k.enabled && (['exa', 'tavily'].includes(k.provider) || !!login) && !login?.needs_login && Date.now() - (this.lastSyncAttempt.get(k.id) || 0) > interval && (!k.usage || Date.now() - Date.parse(k.usage.synced_at) > interval);
     });

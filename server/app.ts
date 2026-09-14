@@ -114,6 +114,21 @@ export function createApp(options: { directory: string; adminToken: string; fetc
     if (key.provider !== 'parallel') return failure(res, 400, 'invalid_provider', '请选择 Parallel key。');
     parallelAuth.cancel(key.id); store.removeLoginSession(key.id); res.json({ ok: true });
   });
+  app.all('/api/keys/:id/exa-balance', (req, res, next) => {
+    const key = store.key(String(req.params.id));
+    if (!key) return failure(res, 404, 'not_found', '密钥不存在。');
+    if (key.provider !== 'exa') return failure(res, 400, 'invalid_provider', '此接口仅用于 Exa 余额。');
+    next();
+  });
+  app.get('/api/keys/:id/exa-balance', (req, res) => res.json(store.keys().find(k => k.id === String(req.params.id))));
+  app.put('/api/keys/:id/exa-balance', (req, res) => {
+    const input = z.discriminatedUnion('mode', [
+      z.object({ mode: z.literal('official') }).strict(),
+      z.object({ mode: z.literal('manual'), balance_usd: z.number().finite().min(-1000000).max(1000000), team_id: z.string().trim().max(100).regex(/^[A-Za-z0-9_-]*$/).optional() }).strict(),
+    ]).parse(req.body);
+    store.exaLedger.configure(String(req.params.id), input);
+    res.json(store.keys().find(k => k.id === String(req.params.id)));
+  });
   app.put('/api/keys/:id/exa-session', (req, res) => {
     const key = store.key(String(req.params.id));
     if (!key) return failure(res, 404, 'not_found', '密钥不存在。');

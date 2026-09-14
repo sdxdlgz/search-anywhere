@@ -1,7 +1,7 @@
-import type { UsageSnapshot } from '../shared/types';
+import type { KeyPublic, UsageSnapshot } from '../shared/types';
 
 export type UsageRefreshResult = { id: string; usage?: UsageSnapshot; error?: string };
-export type UsagePatch = { usage?: UsageSnapshot; usage_error: string | null };
+export type UsagePatch = { usage?: UsageSnapshot | null; usage_error: string | null; exa_balance?: KeyPublic['exa_balance'] };
 
 /** Explicit selection only; no discovery, retries or automatic whole-account expansion. */
 export async function refreshSelectedUsage(
