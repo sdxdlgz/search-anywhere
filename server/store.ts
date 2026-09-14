@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { Vault, hash, mask, newToken } from './security.js';
 import { allocateKeyLabels } from './key-labels.js';
 import { ExaLedger } from './exa-ledger.js';
-import { PROVIDERS, type CallLog, type Dashboard, type KeyPublic, type Profile, type Provider, type RequestLog, type RouteInfo, type SearchResponse, type Settings, type TokenPublic, type UsageSnapshot } from '../shared/types.js';
+import { savedWarnings } from './upstream-warnings.js';
+import { PROVIDERS, type CallLog, type Dashboard, type KeyPublic, type Profile, type Provider, type ProviderOutcome, type RequestLog, type RouteInfo, type SearchResponse, type Settings, type TokenPublic, type UsageSnapshot } from '../shared/types.js';
 
 export type StoredKey = {
   id: string; provider: Provider; label: string; account: string; masked: string; secret: string;
@@ -76,7 +77,7 @@ export class Store {
       UPDATE requests SET status='error' WHERE status='running';
     `);
     const callColumns = this.all<{ name: string }>('PRAGMA table_info(calls)');
-    for (const [name, type] of [['usage_json', 'TEXT'], ['paid', 'INTEGER'], ['transport', "TEXT DEFAULT 'api'"], ['fallback_reason', 'TEXT'], ['billing_scope', 'TEXT']]) {
+    for (const [name, type] of [['usage_json', 'TEXT'], ['paid', 'INTEGER'], ['transport', "TEXT DEFAULT 'api'"], ['fallback_reason', 'TEXT'], ['billing_scope', 'TEXT'], ['warnings_json', 'TEXT']]) {
       if (!callColumns.some(c => c.name === name)) this.db.exec(`ALTER TABLE calls ADD COLUMN ${name} ${type}`);
     }
     this.exaLedger = new ExaLedger(this);
@@ -274,7 +275,10 @@ export class Store {
   saveCollection(callerId: string, value: SearchResponse) { this.run('INSERT INTO collections VALUES(?,?,?,?)', value.collection_id, callerId, JSON.stringify(value), value.collected_at); }
   collection(id: string, callerId: string): SearchResponse | undefined {
     const row = this.get<{ value: string }>('SELECT value FROM collections WHERE id=? AND (caller_id=? OR ?=\'admin\')', id, callerId, callerId);
-    return row ? JSON.parse(row.value) : undefined;
+    if (!row) return undefined;
+    const value = JSON.parse(row.value) as SearchResponse;
+    value.providers = value.providers.map(p => ({ ...p, ...(p.warnings ? { warnings: savedWarnings(p.warnings) } : {}) }));
+    return value;
   }
   beginCall(requestId: string, key: Pick<StoredKey, 'provider' | 'label' | 'account' | 'masked'> & { id: string | null }, mode: string, operation: string, route: RouteInfo = {}): string | undefined {
     const limit = this.settings().daily_call_limit;
@@ -283,13 +287,21 @@ export class Store {
     this.run("INSERT INTO calls(id,request_id,provider,key_id,key_label,account,masked,mode,operation,status,created_at,transport,fallback_reason,billing_scope) VALUES(?,?,?,?,?,?,?,?,?,'running',?,?,?,?)", id, requestId, key.provider, key.id, key.label, key.account, key.masked, mode, operation, now(), route.transport ?? 'api', route.fallback_reason ?? null, key.provider === 'exa' && key.id ? this.exaLedger.scope(key.id) : null);
     return id;
   }
-  finishCall(id: string, data: { status: string; duration_ms: number; result_count?: number; http_status?: number | null; error_code?: string | null; cost_usd?: number | null; credits?: number | null; paid?: boolean | null; billing_source?: string; usage_items?: { name: string; count: number }[] }) {
+  finishCall(id: string, data: { status: string; duration_ms: number; result_count?: number; http_status?: number | null; error_code?: string | null; cost_usd?: number | null; credits?: number | null; paid?: boolean | null; billing_source?: string; usage_items?: { name: string; count: number }[]; warnings?: string[] }) {
     this.run('UPDATE calls SET status=?,duration_ms=?,result_count=?,http_status=?,error_code=?,cost_usd=?,credits=?,billing_source=?,usage_json=? WHERE id=?', data.status, data.duration_ms, data.result_count || 0, data.http_status ?? null, data.error_code ?? null, data.cost_usd ?? null, data.credits ?? null, data.billing_source || 'unknown', data.usage_items?.length ? JSON.stringify(data.usage_items) : null, id);
-    this.run('UPDATE calls SET paid=? WHERE id=?', data.paid == null ? null : Number(data.paid), id);
+    this.run('UPDATE calls SET paid=?,warnings_json=? WHERE id=?', data.paid == null ? null : Number(data.paid), JSON.stringify(data.warnings || []), id);
   }
   todayCalls() { return this.get<{ count: number }>("SELECT COUNT(*) count FROM calls WHERE created_at>=?", new Date().toISOString().slice(0, 10))!.count; }
   logs(limit = 50, offset = 0): RequestLog[] {
-    return this.all<Omit<RequestLog, 'calls'>>('SELECT * FROM requests ORDER BY created_at DESC LIMIT ? OFFSET ?', limit, offset).map(r => ({ ...r, calls: this.all<CallLog & { usage_json: string | null }>('SELECT * FROM calls WHERE request_id=? ORDER BY created_at', r.id).map(({ usage_json, ...call }) => ({ ...call, usage_items: usage_json ? JSON.parse(usage_json) : [] })) }));
+    const rows = this.all<Omit<RequestLog, 'calls'> & { stored_providers: string | null }>('SELECT r.*,json_extract(c.value,\'$.providers\') AS stored_providers FROM requests r LEFT JOIN collections c ON c.id=r.id ORDER BY r.created_at DESC LIMIT ? OFFSET ?', limit, offset);
+    return rows.map(({ stored_providers, ...request }) => {
+      const previous: ProviderOutcome[] = stored_providers ? JSON.parse(stored_providers) : [];
+      const calls = this.all<CallLog & { usage_json: string | null; warnings_json: string | null }>('SELECT * FROM calls WHERE request_id=? ORDER BY created_at', request.id).map(({ usage_json, warnings_json, ...call }) => {
+        const legacy = call.status === 'success' ? previous.find(p => p.provider === call.provider && p.mode === call.mode && (p.transport || 'api') === (call.transport || 'api'))?.warnings : undefined;
+        return { ...call, usage_items: usage_json ? JSON.parse(usage_json) : [], warnings: savedWarnings(warnings_json ? JSON.parse(warnings_json) : legacy) };
+      });
+      return { ...request, calls };
+    });
   }
   dashboard(): Dashboard {
     const since = new Date().toISOString().slice(0, 10);

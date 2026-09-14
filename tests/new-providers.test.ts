@@ -65,6 +65,6 @@ test('C1/C6: new suppliers rotate after authentication failure; MCP text format 
     if (rpc.method === 'tools/call') return Response.json({ jsonrpc: '2.0', id: rpc.id, result: { content: [{ type: 'text', text: 'unstructured unknown response' }] } });
     return upstream(url, init);
   });
-  try { const [k] = malformed.add('keenable'); await assert.rejects(malformed.engine.providers.search(malformed.store.key(k.id)!, 'pro', { query: 'bad format' }, 1, AbortSignal.timeout(3000)), /未返回结构化/); }
+  try { const [k] = malformed.add('keenable'); await assert.rejects(malformed.engine.providers.search(malformed.store.key(k.id)!, 'pro', { query: 'bad format' }, 1, AbortSignal.timeout(3000)), /搜索结果格式无法识别/); }
   finally { await malformed.cleanup(); }
 });

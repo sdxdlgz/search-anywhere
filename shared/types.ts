@@ -83,7 +83,7 @@ export type CallLog = RouteInfo & {
   id: string; request_id: string; provider: Provider; key_id: string | null; key_label: string; account: string;
   masked: string; mode: string; operation: string; status: string; http_status: number | null;
   error_code: string | null; duration_ms: number; result_count: number; cost_usd: number | null; paid?: boolean | null;
-  credits: number | null; billing_source: string; created_at: string; usage_items?: { name: string; count: number }[];
+  credits: number | null; billing_source: string; created_at: string; usage_items?: { name: string; count: number }[]; warnings?: string[];
 };
 export type Dashboard = {
   requests: number; calls: number; successes: number; avg_latency_ms: number; cache_hits: number;

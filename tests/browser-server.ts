@@ -31,6 +31,12 @@ const f = fixture(async (url, init) => {
   if (url.startsWith(AUTH) && JSON.parse(String(init?.body)).refresh_token === 'fixture-invalid-login') return Response.json({ error: 'invalid_grant' }, { status: 400 });
   if (url.startsWith(AUTH) || url.endsWith('/v1/auth/user') || url.endsWith('/organization/balance')) return keenableUpstream(url, init);
   if (url.endsWith('/usage')) return Response.json({ key: { usage: 0, limit: null }, account: { current_plan: 'Researcher', plan_usage: 0, plan_limit: 1000, paygo_usage: 0, paygo_limit: null } });
+  if (url === 'https://api.parallel.ai/v1/search' && String(init?.body).includes('parallel-warning-browser')) return Response.json({
+    results: [result('parallel')], warnings: [
+      { type: 'input_validation_warning', message: 'Reducing max_results=40 to 20.' },
+      { code: 'display_test', message: `Credential ${new Headers(init?.headers).get('x-api-key')}; <img src=x onerror=window.warningInjected=true>` },
+    ],
+  });
   const response = await upstream(url, init);
   const request = init?.body ? JSON.parse(String(init.body)) : {};
   const search = url.endsWith('/search') || request.params?.name === 'search_web_pages';

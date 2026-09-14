@@ -24,7 +24,7 @@ test('P1/P4: anonymous SDK JSON and SSE responses retain all excerpts and full t
       assert.equal(search.results[0].snippet, 'Excerpt A\nExcerpt B');
       assert.equal(search.results[0].content, full); assert.equal(search.results[0].truncated, false);
       assert.equal(search.cost_usd, 0); assert.equal(search.paid, false); assert.equal(search.credits, null); assert.equal(search.billing_source, 'free');
-      assert.match(search.warnings!.join(' '), /25,000/); assert.match(search.warnings!.join(' '), /域名条件仅在网关过滤/); assert.match(search.warnings!.join(' '), /上游报告 1/);
+      assert.match(search.warnings!.join(' '), /25,000/); assert.match(search.warnings!.join(' '), /域名条件仅在网关过滤/); assert.match(search.warnings!.join(' '), /上游提示：upstream restriction/);
       assert.deepEqual(calls[0].params, { name: 'web_search', arguments: { objective: 'SQLite official WAL', search_queries: ['SQLite official WAL'], session_id: 'stable-session' } });
       const fetched = await f.engine.providers.parallelFree('https://sqlite.org/wal.html', 'stable-session', AbortSignal.timeout(3000));
       assert.equal(fetched.results[0].snippet, full); assert.ok(full.length > 25000);

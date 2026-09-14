@@ -9,6 +9,7 @@ import { AnySearchBalance } from './anysearch-balance.js';
 import { ExaBalance } from './exa-balance.js';
 import { estimateExaCost } from './exa-ledger.js';
 import { parallelFreeMcp } from './parallel-mcp.js';
+import { upstreamWarnings } from './upstream-warnings.js';
 import { ParallelBalance } from './parallel-balance.js';
 import { boundedBody, GatewayError, responseError, type HttpFetch } from './upstream.js';
 export { GatewayError, type HttpFetch } from './upstream.js';
@@ -65,7 +66,7 @@ export class Providers {
       throw new GatewayError('上游连接失败或响应格式无效。', 'connection_error', 502, true, 10000);
     }
   }
-  private normalize(provider: Provider, data: Json, mode: string, operation: string): ProviderData {
+  private normalize(provider: Provider, data: Json, mode: string, operation: string, secrets: readonly string[] = []): ProviderData {
     if (!Array.isArray(data.results)) throw new GatewayError('上游结果格式无效。', 'invalid_response', 502, true);
     const warnings: string[] = [];
     const results = data.results.map(v => {
@@ -81,7 +82,7 @@ export class Providers {
     }).filter(r => canonicalUrl(r.url));
     if (results.length !== data.results.length) warnings.push(`${data.results.length - results.length} 条结果缺少有效公网 URL，未纳入集合。`);
     if (results.some(r => r.truncated)) warnings.push('部分文本被上游或本地 100,000 字符存储限制截断。');
-    if (Array.isArray(data.warnings) && data.warnings.length) warnings.push(`上游报告 ${data.warnings.length} 项警告；本次检索可能受限制。`);
+    warnings.push(...upstreamWarnings(data.warnings, secrets));
     if (Array.isArray(data.errors) && data.errors.length) warnings.push(`上游报告 ${data.errors.length} 项提取失败。`);
     const reportedCost = num(obj(data.costDollars).total);
     const localCost = provider === 'exa' ? estimateExaCost(mode, operation, data.results.length) : null;
@@ -108,8 +109,9 @@ export class Providers {
       anysearch: { url: 'https://api.anysearch.com/v1/search', body: { query: input.query, max_results: count, format: 'json' } },
     };
     const request = requests[key.provider];
-    const data = await this.request(request.url, this.store.secret(key), key.provider, signal, request.body);
-    const normalized = this.normalize(key.provider, data, mode, 'search');
+    const secret = this.store.secret(key);
+    const data = await this.request(request.url, secret, key.provider, signal, request.body);
+    const normalized = this.normalize(key.provider, data, mode, 'search', [secret]);
     if (key.provider === 'anysearch' && (input.include_domains?.length || input.exclude_domains?.length)) normalized.warnings!.push('AnySearch 域名条件仅在网关过滤，可能减少命中数量；可按域名分别补搜。');
     return normalized;
   }
@@ -123,9 +125,10 @@ export class Providers {
       anysearch: { url: 'https://api.anysearch.com/v1/extract', body: { url } },
     };
     const request = requests[key.provider];
-    let data = await this.request(request.url, this.store.secret(key), key.provider, signal, request.body);
-    if (key.provider === 'anysearch') data = { results: [{ ...data, url: text(data.url) || url }] };
-    return this.normalize(key.provider, data, 'extract', 'fetch');
+    const secret = this.store.secret(key);
+    let data = await this.request(request.url, secret, key.provider, signal, request.body);
+    if (key.provider === 'anysearch') data = { results: [{ ...data, url: text(data.url) || url }], warnings: data.warnings };
+    return this.normalize(key.provider, data, 'extract', 'fetch', [secret]);
   }
   async parallelFree(input: SearchInput | string, sessionId: string, signal: AbortSignal): Promise<ProviderData> {
     const fetching = typeof input === 'string';
@@ -141,9 +144,10 @@ export class Providers {
   }
   private async keenable(key: StoredKey, name: string, args: Json, mode: string, signal: AbortSignal): Promise<ProviderData> {
     const client = new Client({ name: 'search-anywhere', version: '0.2.2' });
+    const secret = this.store.secret(key);
     let httpError: GatewayError | undefined;
     const transport = new StreamableHTTPClientTransport(new URL('https://api.keenable.ai/mcp'), {
-      requestInit: { headers: { 'X-API-Key': this.store.secret(key) } },
+      requestInit: { headers: { 'X-API-Key': secret } },
       fetch: async (input, init) => {
         const combined = init?.signal ? AbortSignal.any([signal, init.signal]) : signal;
         const response = await this.http(String(input), { ...init, signal: combined, redirect: 'error' });
@@ -161,7 +165,7 @@ export class Providers {
       if (response.isError) throw new GatewayError('Keenable 工具返回错误，未采纳响应内容。', 'upstream_error');
       const blocks = Array.isArray(response.content) ? response.content.map(obj).filter(c => c.type === 'text').map(c => text(c.text)) : [];
       const data = obj(response.structuredContent || (mode === 'extract' ? JSON.parse(blocks.join('\n')) : keenableSearchData(blocks.join('\n'))));
-      const normalized = this.normalize('keenable', mode === 'extract' ? { results: [{ ...data, url: text(data.url) || args.url }] } : data, mode, mode === 'extract' ? 'fetch' : 'search');
+      const normalized = this.normalize('keenable', mode === 'extract' ? { results: [{ ...data, url: text(data.url) || args.url }], warnings: data.warnings } : data, mode, mode === 'extract' ? 'fetch' : 'search', [secret]);
       const usage = obj(obj(response._meta)['keenable/usage']);
       return { ...normalized, credits: num(usage.credits), paid: typeof usage.paid === 'boolean' ? usage.paid : null,
         usage_items: text(usage.sku) && num(usage.amount) !== null ? [{ name: text(usage.sku).slice(0, 100), count: num(usage.amount)! }] : [],
