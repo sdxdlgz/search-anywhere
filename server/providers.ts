@@ -4,6 +4,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { PROVIDER_LIMITS, type Provider, type SearchInput, type UsageSnapshot } from '../shared/types.js';
 import type { StoredKey, Store } from './store.js';
 import { KeenableBalance } from './keenable-balance.js';
+import { keenableSearchData } from './keenable-search.js';
 import { AnySearchBalance } from './anysearch-balance.js';
 import { ExaBalance } from './exa-balance.js';
 import { estimateExaCost } from './exa-ledger.js';
@@ -159,7 +160,7 @@ export class Providers {
       const response = await client.callTool({ name, arguments: args, _meta: { 'keenable/overrides': { ...(mode === 'extract' ? {} : { mode }), skip_cache: true } } }, undefined, { signal, timeout: 180000 });
       if (response.isError) throw new GatewayError('Keenable 工具返回错误，未采纳响应内容。', 'upstream_error');
       const blocks = Array.isArray(response.content) ? response.content.map(obj).filter(c => c.type === 'text').map(c => text(c.text)) : [];
-      const data = obj(response.structuredContent || JSON.parse(blocks.join('\n')));
+      const data = obj(response.structuredContent || (mode === 'extract' ? JSON.parse(blocks.join('\n')) : keenableSearchData(blocks.join('\n'))));
       const normalized = this.normalize('keenable', mode === 'extract' ? { results: [{ ...data, url: text(data.url) || args.url }] } : data, mode, mode === 'extract' ? 'fetch' : 'search');
       const usage = obj(obj(response._meta)['keenable/usage']);
       return { ...normalized, credits: num(usage.credits), paid: typeof usage.paid === 'boolean' ? usage.paid : null,

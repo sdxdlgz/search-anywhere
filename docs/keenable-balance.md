@@ -2,6 +2,12 @@
 
 结论：存在官网控制台使用的余额接口，需要网页登录会话，不能直接使用搜索 key。现已接入加密会话保存、自动续期和官方余额查询；原有单行、所选批量、定时同步均可使用。
 
+## Pro 搜索和实际计费
+
+2026-09-14 使用一个已配置搜索 key 做真实 MCP Pro 搜索，返回 `sku=search.pro`、`amount=1`、`credits=1`、`paid=false`：此次调用消耗 1 credit，来自该组织的免费额度。此结果只代表测试组织当时的定价；官方文档说明各组织 SKU 单价可能不同，不能硬编码所有 Pro 请求都消耗 1 credit。公开价格页标注 $4 / 1,000 requests，但未单独列出 Pro 美元价。[官方价格](https://keenable.ai/pricing)、[SKU 与用量字段](https://docs.keenable.ai/credits)
+
+实测 MCP 搜索可能只返回 `Title / URL / Published / Acquired / Snippets` 文本块，没有 `structuredContent`。搜索适配器现已兼容这种格式、文本中的 JSON 和原有结构化对象；保留摘录、日期和 `_meta["keenable/usage"]`，未知格式继续报错。`coverage` 预设使用 Pro；密钥行的连通测试仍使用 realtime。
+
 ## 找到的接口与字段
 
 - `GET https://api.keenable.ai/bff/organization/balance`。
