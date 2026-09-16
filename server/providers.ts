@@ -5,18 +5,20 @@ import { PROVIDER_LIMITS, type Provider, type SearchInput, type UsageSnapshot } 
 import type { StoredKey, Store } from './store.js';
 import { KeenableBalance } from './keenable-balance.js';
 import { keenableSearchData } from './keenable-search.js';
+import { keenableFetchData } from './keenable-fetch.js';
+import { requirePage } from './fetch-content.js';
 import { AnySearchBalance } from './anysearch-balance.js';
 import { ExaBalance } from './exa-balance.js';
 import { estimateExaCost } from './exa-ledger.js';
 import { parallelFreeMcp } from './parallel-mcp.js';
 import { upstreamWarnings } from './upstream-warnings.js';
 import { ParallelBalance } from './parallel-balance.js';
-import { boundedBody, GatewayError, responseError, type HttpFetch } from './upstream.js';
+import { abortError, boundedBody, GatewayError, responseError, type HttpFetch, type UpstreamUsage } from './upstream.js';
 export { GatewayError, type HttpFetch } from './upstream.js';
 
 type Json = Record<string, unknown>;
 export type RawResult = { title: string; url: string; snippet: string; content?: string; published_at?: string; acquired_at?: string; truncated?: boolean };
-export type ProviderData = { results: RawResult[]; warnings?: string[]; cost_usd: number | null; credits: number | null; paid?: boolean | null; usage_items?: { name: string; count: number }[]; billing_source: 'reported' | 'estimated' | 'unknown' | 'free' };
+export type ProviderData = UpstreamUsage & { results: RawResult[] };
 const obj = (value: unknown): Json => value && typeof value === 'object' && !Array.isArray(value) ? value as Json : {};
 const text = (value: unknown): string => typeof value === 'string' ? value : '';
 const num = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
@@ -52,9 +54,19 @@ export class Providers {
       const response = await this.http(url, { method: body ? 'POST' : 'GET', redirect: 'error', signal,
         headers: { 'Content-Type': 'application/json', ...(provider === 'tavily' || provider === 'anysearch' ? { Authorization: `Bearer ${secret}` } : { 'x-api-key': secret }), ...(provider === 'anysearch' ? { 'X-Anysearch-Client': 'search-anywhere/0.3.0' } : {}) },
         body: body ? JSON.stringify(body) : undefined });
-      if (!response.ok) { await response.body?.cancel(); throw responseError(response); }
-      const parsed: unknown = JSON.parse(Buffer.from(await boundedBody(response)).toString('utf8'));
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('schema');
+      if (!response.ok) {
+        if (provider === 'anysearch' && url.endsWith('/extract') && response.status === 422) {
+          const body = await boundedBody(response);
+          let error: Json = {};
+          try { error = obj(JSON.parse(Buffer.from(body).toString('utf8'))); } catch { /* Keep unknown validation errors classified by HTTP status. */ }
+          if (error.error_code === 'extract_failed') throw new GatewayError('AnySearch 无法提取目标网页；请尝试普通网页链接、其他来源或搜索摘录。', 'source_unavailable', 422);
+        } else await response.body?.cancel();
+        throw responseError(response);
+      }
+      const bodyText = Buffer.from(await boundedBody(response)).toString('utf8');
+      let parsed: unknown;
+      try { parsed = JSON.parse(bodyText); } catch { throw new GatewayError('上游返回的 JSON 格式无效，未采纳响应内容。', 'invalid_response'); }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new GatewayError('上游结果格式无效。', 'invalid_response');
       if (provider === 'anysearch') {
         if (obj(parsed).code !== 0) throw new GatewayError('AnySearch 返回业务错误，未采纳响应内容。', 'upstream_error');
         return obj(obj(parsed).data);
@@ -62,7 +74,7 @@ export class Providers {
       return obj(parsed);
     } catch (error) {
       if (error instanceof GatewayError) throw error;
-      if (signal.aborted) throw new GatewayError('搜索超时或已取消。', 'timeout', 504);
+      if (signal.aborted) throw abortError(signal);
       throw new GatewayError('上游连接失败或响应格式无效。', 'connection_error', 502, true, 10000);
     }
   }
@@ -128,7 +140,7 @@ export class Providers {
     const secret = this.store.secret(key);
     let data = await this.request(request.url, secret, key.provider, signal, request.body);
     if (key.provider === 'anysearch') data = { results: [{ ...data, url: text(data.url) || url }], warnings: data.warnings };
-    return this.normalize(key.provider, data, 'extract', 'fetch', [secret]);
+    return requirePage(this.normalize(key.provider, data, 'extract', 'fetch', [secret]), key.provider, data);
   }
   async parallelFree(input: SearchInput | string, sessionId: string, signal: AbortSignal): Promise<ProviderData> {
     const fetching = typeof input === 'string';
@@ -140,12 +152,14 @@ export class Providers {
     data.warnings!.push(fetching ? '已请求完整正文；实际返回受上游抓取能力及本地 100,000 字符 / 4 MB 限制。' :
       '免费 MCP 固定 fast，返回条数由上游决定；单次摘录合计约限 25,000 字符。可用 fetch 读取命中网页正文，并补搜遗漏。');
     if (!fetching && (input.include_domains?.length || input.exclude_domains?.length)) data.warnings!.push('免费 MCP 的域名条件仅在网关过滤，可能减少命中数量；可按域名分别补搜或选择 API 直连。');
-    return { ...data, cost_usd: 0, credits: null, paid: false, usage_items: [], billing_source: 'free' };
+    const free: ProviderData = { ...data, cost_usd: 0, credits: null, paid: false, usage_items: [], billing_source: 'free' };
+    return fetching ? requirePage(free, 'parallel', response) : free;
   }
   private async keenable(key: StoredKey, name: string, args: Json, mode: string, signal: AbortSignal): Promise<ProviderData> {
     const client = new Client({ name: 'search-anywhere', version: '0.3.0' });
     const secret = this.store.secret(key);
     let httpError: GatewayError | undefined;
+    let usage: UpstreamUsage | undefined;
     const transport = new StreamableHTTPClientTransport(new URL('https://api.keenable.ai/mcp'), {
       requestInit: { headers: { 'X-API-Key': secret } },
       fetch: async (input, init) => {
@@ -162,19 +176,19 @@ export class Providers {
     try {
       await client.connect(transport, { signal, timeout: 180000 });
       const response = await client.callTool({ name, arguments: args, _meta: { 'keenable/overrides': { ...(mode === 'extract' ? {} : { mode }), skip_cache: true } } }, undefined, { signal, timeout: 180000 });
+      const reported = obj(obj(response._meta)['keenable/usage']);
+      usage = { cost_usd: null, credits: num(reported.credits), paid: typeof reported.paid === 'boolean' ? reported.paid : null,
+        usage_items: text(reported.sku) && num(reported.amount) !== null ? [{ name: text(reported.sku).slice(0, 100), count: num(reported.amount)! }] : [],
+        billing_source: num(reported.credits) !== null || text(reported.sku) && num(reported.amount) !== null ? 'reported' : 'unknown' };
       if (response.isError) throw new GatewayError('Keenable 工具返回错误，未采纳响应内容。', 'upstream_error');
       const blocks = Array.isArray(response.content) ? response.content.map(obj).filter(c => c.type === 'text').map(c => text(c.text)) : [];
-      const data = obj(response.structuredContent || (mode === 'extract' ? JSON.parse(blocks.join('\n')) : keenableSearchData(blocks.join('\n'))));
+      const data = obj(response.structuredContent || (mode === 'extract' ? keenableFetchData(blocks.join('\n')) : keenableSearchData(blocks.join('\n'))));
       const normalized = this.normalize('keenable', mode === 'extract' ? { results: [{ ...data, url: text(data.url) || args.url }], warnings: data.warnings } : data, mode, mode === 'extract' ? 'fetch' : 'search', [secret]);
-      const usage = obj(obj(response._meta)['keenable/usage']);
-      return { ...normalized, credits: num(usage.credits), paid: typeof usage.paid === 'boolean' ? usage.paid : null,
-        usage_items: text(usage.sku) && num(usage.amount) !== null ? [{ name: text(usage.sku).slice(0, 100), count: num(usage.amount)! }] : [],
-        billing_source: num(usage.credits) !== null ? 'reported' : 'unknown' };
+      const result = { ...normalized, ...usage };
+      return mode === 'extract' ? requirePage(result) : result;
     } catch (error) {
-      if (error instanceof GatewayError) throw error;
-      if (signal.aborted) throw new GatewayError('搜索超时或已取消。', 'timeout', 504);
-      if (httpError) throw httpError;
-      throw new GatewayError('Keenable 连接失败或未返回结构化结果。', 'invalid_response');
+      const e = signal.aborted ? abortError(signal) : httpError ?? (error instanceof GatewayError ? error : new GatewayError('Keenable 连接失败或响应格式无效。', 'connection_error'));
+      throw new GatewayError(e.message, e.code, e.status, e.retryable, e.cooldownMs, e.usage ?? usage);
     } finally { await client.close().catch(() => undefined); }
   }
   async usage(key: StoredKey): Promise<UsageSnapshot> {

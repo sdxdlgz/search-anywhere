@@ -1,6 +1,7 @@
 import { hash } from './security.js';
 import { Store, type StoredKey } from './store.js';
 import { canonicalUrl, GatewayError, Providers, publicUrl, type ProviderData } from './providers.js';
+import { abortError } from './upstream.js';
 import { PROVIDERS, PROVIDER_LIMITS, type EvidenceInput, type EvidenceResponse, type Profile, type Provider, type ProviderOutcome, type ResultsInput, type RouteInfo, type SearchInput, type SearchResponse, type SearchResult, type UsageSnapshot } from '../shared/types.js';
 
 type Caller = { id: string; name: string };
@@ -68,7 +69,7 @@ export class Engine {
       const limit = r.outcome.transport === 'free_mcp' ? null : Math.min(requested, PROVIDER_LIMITS[r.outcome.provider]);
       Object.assign(r.outcome, { requested_results: requested, effective_limit: limit, limit_reached: limit === null ? undefined : r.outcome.count >= limit });
     }
-    if (!results.some(r => r.data)) throw new GatewayError(results.map(r => `${r.outcome.provider}: ${r.outcome.error}`).join('；') || '没有启用的供应商。', 'all_providers_failed', 503);
+    if (!results.some(r => r.data)) throw signal.aborted ? abortError(signal) : new GatewayError(results.map(r => `${r.outcome.provider}: ${r.outcome.error}`).join('；') || '没有启用的供应商。', 'all_providers_failed', 503);
     const partial = results.some(r => !r.data);
     const fused = fuse(results, input.query), kept = fused.filter(r => allowedDomain(r.url, input));
     const response = this.collect(id, caller, input, { ...profile, modes }, kept, results, Date.now() - started, fused.length - kept.length);
@@ -110,11 +111,11 @@ export class Engine {
     const started = Date.now();
     const freeMode = operation === 'fetch' ? 'extract' : 'fast';
     const outcome: ProviderOutcome = { provider, mode: freeMode, requested_mode: mode, transport: 'free_mcp', status: 'error', count: 0, duration_ms: 0 };
-    if (signal.aborted) return { outcome: { ...outcome, error: '整体搜索截止时间已到。' } };
+    if (signal.aborted) { const e = abortError(signal); return { outcome: { ...outcome, error: e.message, error_code: e.code, http_status: e.status } }; }
     if (Date.now() >= this.parallelFreeCooldown) {
       const attempt = await this.runFree(requestId, operation, freeMode, signal, free);
       if (attempt.data) return { data: attempt.data, outcome: { ...outcome, status: 'success', count: attempt.data.results.length, duration_ms: Date.now() - started, warnings: attempt.data.warnings } };
-      if (attempt.error!.code !== 'rate_limited') return { outcome: { ...outcome, duration_ms: Date.now() - started, error: attempt.error!.message } };
+      if (attempt.error!.code !== 'rate_limited') return { outcome: { ...outcome, duration_ms: Date.now() - started, error: attempt.error!.message, error_code: attempt.error!.code, http_status: attempt.error!.status } };
       this.parallelFreeCooldown = Date.now() + (attempt.error!.cooldownMs || 60000);
     }
     const result = await this.runProvider(provider, mode, requestId, operation, signal, paid, undefined, { transport: 'api', fallback_reason: 'free_rate_limited' });
@@ -132,16 +133,17 @@ export class Engine {
       this.store.finishCall(callId, { status: 'success', http_status: 200, duration_ms: Date.now() - started, result_count: data.results.length, ...data });
       return { data };
     } catch (error) {
-      const e = signal.aborted ? new GatewayError('搜索超时或已取消。', 'timeout', 504) : error instanceof GatewayError ? error : new GatewayError('免费 MCP 请求失败。', 'internal_error');
-      this.store.finishCall(callId, { status: 'error', http_status: e.status, error_code: e.code, duration_ms: Date.now() - started, cost_usd: 0, paid: false, billing_source: 'free' });
+      const e = signal.aborted ? abortError(signal) : error instanceof GatewayError ? error : new GatewayError('免费 MCP 请求失败。', 'internal_error');
+      this.store.finishCall(callId, { status: 'error', http_status: e.status, error_code: e.code, duration_ms: Date.now() - started, cost_usd: 0, paid: false, billing_source: 'free', warnings: [...(e.usage?.warnings || []), e.message] });
       return { error: e };
     }
   }
   private async runProvider(provider: Provider, mode: string, requestId: string, operation: string, signal: AbortSignal, run: (key: StoredKey) => Promise<ProviderData>, forced?: string, route: RouteInfo = { transport: 'api' }): Promise<Run> {
     const started = Date.now(), excluded: string[] = [];
     let message = '没有可用的密钥，或密钥正在冷却 / 并发已满。';
+    let failure: GatewayError | undefined;
     for (let attempt = 0; attempt < (forced ? 1 : 2); attempt++) {
-      if (signal.aborted) { message = '整体搜索截止时间已到。'; break; }
+      if (signal.aborted) { failure = abortError(signal); message = failure.message; break; }
       const key = this.store.reserve(provider, excluded, forced);
       if (!key) break;
       excluded.push(key.id);
@@ -154,24 +156,21 @@ export class Engine {
         this.store.setKeyState(key.id, 'ready', null, null);
         return { data, outcome: { provider, mode, ...route, status: 'success', count: data.results.length, duration_ms: Date.now() - started, warnings: data.warnings } };
       } catch (error) {
-        const e = error instanceof GatewayError ? error : new GatewayError('请求执行失败。', 'internal_error');
+        const e = signal.aborted ? abortError(signal) : error instanceof GatewayError ? error : new GatewayError('请求执行失败。', 'internal_error');
+        failure = e;
         message = e.message;
-        this.store.finishCall(callId, { status: 'error', http_status: e.status, error_code: e.code, duration_ms: Date.now() - callStart });
+        this.store.finishCall(callId, { ...e.usage, status: 'error', http_status: e.status, error_code: e.code, duration_ms: Date.now() - callStart, warnings: [...(e.usage?.warnings || []), e.message] });
         if (e.code === 'invalid_key') this.store.setKeyState(key.id, 'invalid', e.message, null);
         else if (e.cooldownMs) this.store.setKeyState(key.id, e.code === 'exhausted' ? 'exhausted' : 'cooldown', e.message, new Date(Date.now() + e.cooldownMs).toISOString());
         if (!e.retryable && e.code !== 'invalid_key') break;
       } finally { this.store.release(key.id); }
     }
-    return { outcome: { provider, mode, ...route, status: 'error', count: 0, duration_ms: Date.now() - started, error: message } };
+    return { outcome: { provider, mode, ...route, status: 'error', count: 0, duration_ms: Date.now() - started, error: message, ...(failure ? { error_code: failure.code, http_status: failure.status } : {}) } };
   }
   private fetchProvider(provider: Provider, url: string, caller: Caller, profile: Profile, id: string, signal: AbortSignal): Promise<Run> {
-    const requireContent = (data: ProviderData) => {
-      if (!data.results.some(r => r.snippet)) throw new GatewayError('上游未返回网页正文。', 'empty_content');
-      return data;
-    };
     return this.runRouted(provider, 'extract', profile, id, 'fetch', signal,
-      key => this.providers.fetch(key, url, signal).then(requireContent),
-      () => this.providers.parallelFree(url, this.parallelSession(caller), signal).then(requireContent));
+      key => this.providers.fetch(key, url, signal),
+      () => this.providers.parallelFree(url, this.parallelSession(caller), signal));
   }
   async fetch(url: string, caller: Caller, profileId?: string, signal?: AbortSignal) {
     this.available();
@@ -191,14 +190,14 @@ export class Engine {
         const response = this.collect(id, caller, { query: url, profile: profile.id }, profile, fuse([result], url), [result], Date.now() - start);
         return { ...response, url, provider: p, results: result.data.results.slice(0, 1) };
       }
-      throw new GatewayError('正文读取失败，请检查可用密钥和网页地址。', 'fetch_failed', 503);
+      throw combined.aborted ? abortError(combined) : new GatewayError('正文读取失败，请检查可用密钥和网页地址。', 'fetch_failed', 503);
     } catch (error) { this.store.finishRequest(id, 'error', Date.now() - start); throw error; }
     finally { this.active--; }
   }
   private async fetchAll(url: string, caller: Caller, profile: Profile, id: string, start: number, signal: AbortSignal) {
     const runs = await Promise.all(PROVIDERS.filter(p => profile.modes[p]).map(p => this.fetchProvider(p, url, caller, profile, id, signal)));
     const first = runs.find(r => r.data);
-    if (!first) throw new GatewayError('所有渠道均未返回网页正文。', 'fetch_failed', 503);
+    if (!first) throw signal.aborted ? abortError(signal) : new GatewayError(`所有渠道均未返回网页正文。${runs.map(r => `${r.outcome.provider}: ${r.outcome.error}`).join('；')}`, 'fetch_failed', 503);
     const response = this.collect(id, caller, { query: url, profile: profile.id }, profile, fuse(runs, url), runs, Date.now() - start);
     this.store.finishRequest(id, response.partial ? 'partial' : 'success', response.duration_ms);
     return { ...pageOf(response, 0, profile.max_results), url, provider: first.outcome.provider };

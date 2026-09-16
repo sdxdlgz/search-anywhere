@@ -1,6 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { boundedBody, GatewayError, responseError, type HttpFetch } from './upstream.js';
+import { abortError, boundedBody, GatewayError, responseError, type HttpFetch } from './upstream.js';
 
 type Json = Record<string, unknown>;
 const object = (value: unknown): Json => value && typeof value === 'object' && !Array.isArray(value) ? value as Json : {};
@@ -41,7 +41,7 @@ export async function parallelFreeMcp(http: HttpFetch, name: string, args: Json,
     if (!Array.isArray(data.results)) throw new GatewayError('Parallel 免费 MCP 未返回有效结构化结果。', 'invalid_response');
     return data;
   } catch (error) {
-    if (signal.aborted) throw new GatewayError('搜索超时或已取消。', 'timeout', 504);
+    if (signal.aborted) throw abortError(signal);
     if (transportError) throw transportError;
     if (error instanceof GatewayError) throw error;
     throw new GatewayError('Parallel 免费 MCP 连接失败或响应格式无效。', 'connection_error');

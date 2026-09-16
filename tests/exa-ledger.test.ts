@@ -4,6 +4,7 @@ import { copyFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '../server/store.js';
 import { Providers } from '../server/providers.js';
+import { GatewayError } from '../server/upstream.js';
 import { fixture, caller, result, upstream } from './helpers.js';
 import { exaBalanceSnapshot } from '../server/exa-balance.js';
 import { exaCookieValue, exaCredits, exaPlan } from './exa-fixtures.js';
@@ -51,7 +52,8 @@ test('E9: current mode rates use raw results before filtering, prefer reported z
       const data = await p.search(f.store.key(key.id)!, mode, { query: 'pricing' }, 100, AbortSignal.timeout(1000));
       assert.equal(data.results.length, 11); assert.equal(data.cost_usd, cost); assert.equal(data.billing_source, 'estimated');
     }
-    assert.equal((await p.fetch(f.store.key(key.id)!, 'https://example.com/page', AbortSignal.timeout(1000))).cost_usd, .001);
+    // The only returned URL is private: reject it as evidence while retaining its estimated charge.
+    await assert.rejects(p.fetch(f.store.key(key.id)!, 'https://example.com/page', AbortSignal.timeout(1000)), error => error instanceof GatewayError && error.code === 'empty_content' && error.usage?.cost_usd === .001);
     for (report of [0, .123456]) {
       const data = await p.search(f.store.key(key.id)!, 'auto', { query: 'reported' }, 100, AbortSignal.timeout(1000));
       assert.equal(data.cost_usd, report); assert.equal(data.billing_source, 'reported');

@@ -103,6 +103,7 @@ curl http://localhost:8765/v1/search \
 | [历史数据清理](docs/history-retention.md) | 自动保留期限、手动清理、计费记录与空间复用 |
 | [研究工作流](docs/research-workflow.md) | 多轮检索、证据读取、交叉核对与验收 |
 | [上游查询提示](docs/search-warnings.md) | 数量限制、截断和供应商警告的处理 |
+| [搜索故障排查](docs/provider-errors.md) | 超时、客户端取消、正文提取失败和安全验证页 |
 
 ## 运行边界
 

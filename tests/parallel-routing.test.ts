@@ -127,8 +127,8 @@ test('P2: no fallback key, daily budget and cancellation fail cleanly without ex
   const f = fixture(async (url, init) => { if (url !== FREE_MCP) paid++; return mock(url, init); }, 'balanced', 'free_first');
   try {
     f.add('parallel'); f.store.saveProfile({ ...f.store.profile()!, modes: { parallel: 'basic' } });
-    await assert.rejects(f.engine.search({ query: 'cancel' }, caller, { signal: controller.signal }), /超时或已取消/);
-    assert.equal(paid, 0); assert.equal(f.store.logs()[0].calls[0].error_code, 'timeout'); assert.equal(f.store.inflight.size, 0);
+    await assert.rejects(f.engine.search({ query: 'cancel' }, caller, { signal: controller.signal }), { code: 'cancelled', status: 499 });
+    assert.equal(paid, 0); assert.equal(f.store.logs()[0].calls[0].error_code, 'cancelled'); assert.equal(f.store.inflight.size, 0);
   } finally { await f.cleanup(); }
 });
 

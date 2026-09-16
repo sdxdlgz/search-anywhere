@@ -61,7 +61,7 @@ export type SearchResult = {
   title: string; url: string; snippet: string; published_at?: string;
   sources: Provider[]; score: number; evidence: Evidence[];
 };
-export type ProviderOutcome = RouteInfo & { provider: Provider; mode: string; requested_mode?: string; status: 'success' | 'error'; count: number; duration_ms: number; error?: string; requested_results?: number; effective_limit?: number | null; limit_reached?: boolean; unique_urls?: number; exclusive_urls?: number; warnings?: string[] };
+export type ProviderOutcome = RouteInfo & { provider: Provider; mode: string; requested_mode?: string; status: 'success' | 'error'; count: number; duration_ms: number; error?: string; error_code?: string; http_status?: number; requested_results?: number; effective_limit?: number | null; limit_reached?: boolean; unique_urls?: number; exclusive_urls?: number; warnings?: string[] };
 export type SearchResponse = {
   request_id: string; query: string; profile: string; results: SearchResult[];
   providers: ProviderOutcome[]; partial: boolean; cache_hit: boolean; duration_ms: number;

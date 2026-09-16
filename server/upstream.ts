@@ -1,5 +1,13 @@
+export type UpstreamUsage = { cost_usd: number | null; credits: number | null; paid?: boolean | null; usage_items?: { name: string; count: number }[]; billing_source: 'reported' | 'estimated' | 'unknown' | 'free'; warnings?: string[] };
+
 export class GatewayError extends Error {
-  constructor(message: string, readonly code: string, readonly status = 502, readonly retryable = false, readonly cooldownMs = 0) { super(message); }
+  constructor(message: string, readonly code: string, readonly status = 502, readonly retryable = false, readonly cooldownMs = 0, readonly usage?: UpstreamUsage) { super(message); }
+}
+
+export function abortError(signal: AbortSignal): GatewayError {
+  return signal.reason?.name === 'TimeoutError'
+    ? new GatewayError('已达到网关预设的整体截止时间；可调整预设或分批检索。', 'timeout', 504)
+    : new GatewayError('客户端已取消或断开请求；请检查客户端 HTTP / MCP 超时，覆盖搜索建议至少 180 秒。', 'cancelled', 499);
 }
 
 export type HttpFetch = (input: string, init?: RequestInit) => Promise<Response>;
