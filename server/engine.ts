@@ -167,12 +167,12 @@ export class Engine {
     }
     return { outcome: { provider, mode, ...route, status: 'error', count: 0, duration_ms: Date.now() - started, error: message, ...(failure ? { error_code: failure.code, http_status: failure.status } : {}) } };
   }
-  private fetchProvider(provider: Provider, url: string, caller: Caller, profile: Profile, id: string, signal: AbortSignal): Promise<Run> {
+  private fetchProvider(provider: Provider, url: string, caller: Caller, profile: Profile, id: string, signal: AbortSignal, objective?: string): Promise<Run> {
     return this.runRouted(provider, 'extract', profile, id, 'fetch', signal,
-      key => this.providers.fetch(key, url, signal),
-      () => this.providers.parallelFree(url, this.parallelSession(caller), signal));
+      key => this.providers.fetch(key, url, signal, objective),
+      () => this.providers.parallelFree(url, this.parallelSession(caller), signal, objective));
   }
-  async fetch(url: string, caller: Caller, profileId?: string, signal?: AbortSignal) {
+  async fetch(url: string, caller: Caller, profileId?: string, signal?: AbortSignal, objective?: string) {
     this.available();
     publicUrl(url);
     const profile = this.profile(profileId), start = Date.now();
@@ -182,9 +182,9 @@ export class Engine {
     const deadline = AbortSignal.timeout(profile.timeout_ms);
     const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
     try {
-      if (profile.fetch_strategy === 'parallel') return await this.fetchAll(url, caller, profile, id, start, combined);
+      if (profile.fetch_strategy === 'parallel') return await this.fetchAll(url, caller, profile, id, start, combined, objective);
       for (const p of PROVIDERS.filter(p => profile.modes[p])) {
-        const result = await this.fetchProvider(p, url, caller, profile, id, combined);
+        const result = await this.fetchProvider(p, url, caller, profile, id, combined, objective);
         if (!result.data?.results.some(r => r.snippet)) continue;
         this.store.finishRequest(id, 'success', Date.now() - start);
         const response = this.collect(id, caller, { query: url, profile: profile.id }, profile, fuse([result], url), [result], Date.now() - start);
@@ -194,8 +194,8 @@ export class Engine {
     } catch (error) { this.store.finishRequest(id, 'error', Date.now() - start); throw error; }
     finally { this.active--; }
   }
-  private async fetchAll(url: string, caller: Caller, profile: Profile, id: string, start: number, signal: AbortSignal) {
-    const runs = await Promise.all(PROVIDERS.filter(p => profile.modes[p]).map(p => this.fetchProvider(p, url, caller, profile, id, signal)));
+  private async fetchAll(url: string, caller: Caller, profile: Profile, id: string, start: number, signal: AbortSignal, objective?: string) {
+    const runs = await Promise.all(PROVIDERS.filter(p => profile.modes[p]).map(p => this.fetchProvider(p, url, caller, profile, id, signal, objective)));
     const first = runs.find(r => r.data);
     if (!first) throw signal.aborted ? abortError(signal) : new GatewayError(`所有渠道均未返回网页正文。${runs.map(r => `${r.outcome.provider}: ${r.outcome.error}`).join('；')}`, 'fetch_failed', 503);
     const response = this.collect(id, caller, { query: url, profile: profile.id }, profile, fuse(runs, url), runs, Date.now() - start);

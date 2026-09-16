@@ -16,6 +16,8 @@ import { ParallelBalance } from './parallel-balance.js';
 import { abortError, boundedBody, GatewayError, responseError, type HttpFetch, type UpstreamUsage } from './upstream.js';
 export { GatewayError, type HttpFetch } from './upstream.js';
 
+const DEFAULT_FETCH_OBJECTIVE = 'Read the complete page, including its main content, factual details, supporting evidence, and context.';
+
 type Json = Record<string, unknown>;
 export type RawResult = { title: string; url: string; snippet: string; content?: string; published_at?: string; acquired_at?: string; truncated?: boolean };
 export type ProviderData = UpstreamUsage & { results: RawResult[] };
@@ -127,12 +129,12 @@ export class Providers {
     if (key.provider === 'anysearch' && (input.include_domains?.length || input.exclude_domains?.length)) normalized.warnings!.push('AnySearch 域名条件仅在网关过滤，可能减少命中数量；可按域名分别补搜。');
     return normalized;
   }
-  async fetch(key: StoredKey, url: string, signal: AbortSignal): Promise<ProviderData> {
+  async fetch(key: StoredKey, url: string, signal: AbortSignal, objective = DEFAULT_FETCH_OBJECTIVE): Promise<ProviderData> {
     publicUrl(url);
     if (key.provider === 'keenable') return this.keenable(key, 'fetch_page_content', { url, max_chars: 100000, live: true }, 'extract', signal);
     const requests = {
       exa: { url: 'https://api.exa.ai/contents', body: { ids: [url], text: { maxCharacters: 100000 } } },
-      parallel: { url: 'https://api.parallel.ai/v1/extract', body: { urls: [url], advanced_settings: { full_content: true } } },
+      parallel: { url: 'https://api.parallel.ai/v1/extract', body: { urls: [url], objective, advanced_settings: { full_content: true } } },
       tavily: { url: 'https://api.tavily.com/extract', body: { urls: [url], extract_depth: 'basic', format: 'markdown', include_usage: true } },
       anysearch: { url: 'https://api.anysearch.com/v1/extract', body: { url } },
     };
@@ -142,10 +144,10 @@ export class Providers {
     if (key.provider === 'anysearch') data = { results: [{ ...data, url: text(data.url) || url }], warnings: data.warnings };
     return requirePage(this.normalize(key.provider, data, 'extract', 'fetch', [secret]), key.provider, data);
   }
-  async parallelFree(input: SearchInput | string, sessionId: string, signal: AbortSignal): Promise<ProviderData> {
+  async parallelFree(input: SearchInput | string, sessionId: string, signal: AbortSignal, objective = DEFAULT_FETCH_OBJECTIVE): Promise<ProviderData> {
     const fetching = typeof input === 'string';
     if (fetching) publicUrl(input);
-    const args = fetching ? { urls: [input], full_content: true, session_id: sessionId } :
+    const args = fetching ? { urls: [input], objective, full_content: true, session_id: sessionId } :
       { objective: input.query, search_queries: [input.query.slice(0, 200)], session_id: sessionId };
     const response = await parallelFreeMcp(this.http, fetching ? 'web_fetch' : 'web_search', args, signal);
     const data = this.normalize('parallel', response, fetching ? 'extract' : 'fast', fetching ? 'fetch' : 'search');

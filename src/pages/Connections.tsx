@@ -9,6 +9,9 @@ import { ClientTokenUsage } from './ClientTokenUsage';
 export function Connections({ data, run }: { data: Data; run: RunAction }) {
   const [name, setName] = useState(''), [token, setToken] = useState(''), [busy, setBusy] = useState(false), [settings, setSettings] = useState<Settings>(data.settings);
   const [period, setPeriod] = useState<'lifetime' | 'month'>('lifetime');
+  const [showRevoked, setShowRevoked] = useState(false);
+  const revokedCount = data.tokens.filter(t => !t.enabled).length;
+  const visibleTokens = data.tokens.filter(t => t.enabled || showRevoked);
   const base = window.location.origin;
   const config = JSON.stringify({ mcpServers: { 'search-anywhere': { type: 'http', url: `${base}/mcp`, headers: { Authorization: 'Bearer YOUR_SEARCH_KEY' } } } }, null, 2);
   return <div className="page-enter"><div className="page-heading"><div><div className="eyebrow">CONNECT YOUR WORKFLOW</div><h1>客户端接入<span className="heading-dot">.</span></h1><p>模型照常使用，让搜索连接到这里。</p></div><span className="outline-pill"><Link2 size={15}/>HTTP + Streamable HTTP MCP</span></div>
@@ -17,9 +20,10 @@ export function Connections({ data, run }: { data: Data; run: RunAction }) {
       <div className="flex flex-wrap items-center gap-3 px-6 pb-4" role="group" aria-label="凭证统计周期">
         <button className={`button small ${period === 'lifetime' ? 'primary' : ''}`} aria-pressed={period === 'lifetime'} onClick={() => setPeriod('lifetime')}>累计</button>
         <button className={`button small ${period === 'month' ? 'primary' : ''}`} aria-pressed={period === 'month'} onClick={() => setPeriod('month')}>本月（UTC）</button>
+        {revokedCount > 0 && <label className="inline-flex items-center gap-2 text-sm text-muted cursor-pointer"><input type="checkbox" checked={showRevoked} onChange={e => setShowRevoked(e.target.checked)}/>显示已撤销（{revokedCount}）</label>}
         <small className="text-muted">消耗按上游报告或内置计费估算；不同供应商的 credits 分别统计，≈ 表示估算。</small>
       </div>
-      {data.tokens.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>客户端 / 访问凭证</th><th>状态</th><th>请求与调用</th><th>已记录消耗</th><th>最近使用</th><th className="align-right">操作</th></tr></thead><tbody>{data.tokens.map(t => <tr key={t.id}><td><strong>{t.name}</strong><small className="cell-sub"><code>{t.masked}</code></small></td><td><Badge state={t.enabled ? 'ready' : 'disabled'}/></td><ClientTokenUsage usage={t.usage?.[period]}/><td>{date(t.last_used)}</td><td className="align-right"><button className="button small" disabled={!t.enabled} onClick={() => void run(() => api(`/tokens/${t.id}`, { method: 'DELETE' }), '访问凭证已撤销')}><Trash2 size={13}/>撤销</button></td></tr>)}</tbody></table></div> : <div className="simple-empty">还没有访问凭证。生成后填入客户端的 Authorization 请求头。</div>}
+      {visibleTokens.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>客户端 / 访问凭证</th><th>状态</th><th>请求与调用</th><th>已记录消耗</th><th>最近使用</th><th className="align-right">操作</th></tr></thead><tbody>{visibleTokens.map(t => <tr key={t.id}><td><strong>{t.name}</strong><small className="cell-sub"><code>{t.masked}</code></small></td><td><Badge state={t.enabled ? 'ready' : 'disabled'}/></td><ClientTokenUsage usage={t.usage?.[period]}/><td>{date(t.last_used)}</td><td className="align-right"><button className="button small" disabled={!t.enabled} onClick={() => void run(() => api(`/tokens/${t.id}`, { method: 'DELETE' }), '访问凭证已撤销')}><Trash2 size={13}/>撤销</button></td></tr>)}</tbody></table></div> : <div className="simple-empty">{revokedCount ? '暂无可用的访问凭证。勾选“显示已撤销”可查看历史用量。' : '还没有访问凭证。生成后填入客户端的 Authorization 请求头。'}</div>}
       <p className="px-6 py-4 text-xs text-muted">统计进入检索流程的搜索与正文请求，包含缓存命中；重试和多渠道检索分别计入上游调用。读取已存结果、证据分页及 MCP 连接不计数。清理历史后统计保留；旧记录仅在能确认凭证归属时补计。点击页面“刷新”更新统计。</p>
     </section>
     <div className="integration-grid"><section className="panel code-panel"><div className="panel-heading"><div><h2>MCP 配置示例</h2><p>Claude Code 风格 JSON；其他客户端字段见项目 README。</p></div><CopyButton value={config}/></div><pre>{config}</pre><div className="notice subtle"><Terminal size={16}/><span>服务地址须能被客户端访问。其他设备上的 127.0.0.1 指向设备自身；远程部署请使用可达的 HTTPS 地址。</span></div></section>

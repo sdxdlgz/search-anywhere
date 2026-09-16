@@ -1,4 +1,4 @@
-"""T1-T3: real client traffic, usage cells, period switch, revoke and narrow viewport."""
+"""T1-T3 / V1: traffic, usage, revoked visibility, empty/error states and narrow viewport."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 
@@ -14,6 +14,9 @@ with sync_playwright() as p:
     page.get_by_label("管理员口令").fill("admin-test-credential-only-123456")
     page.get_by_role("button", name="进入控制台").click()
     expect(page.get_by_role("heading", name="搜索概览.")).to_be_visible()
+    page.get_by_role("button", name="客户端接入", exact=True).click()
+    expect(page.get_by_text("还没有访问凭证。", exact=False)).to_be_visible()
+    expect(page.get_by_role("checkbox", name="显示已撤销", exact=False)).to_have_count(0)
     for provider in ["exa", "tavily", "parallel"]:
         assert page.request.post(f"{BASE}/api/keys", data={"provider": provider, "label": "Usage fixture", "account": "test only", "keys": [f"{provider}-usage-browser-fixture-123456"]}).status == 201
     profile = page.request.get(f"{BASE}/api/profiles").json()[0]
@@ -57,8 +60,24 @@ with sync_playwright() as p:
     page.get_by_role("button", name="我已保存").click()
     expect(page.get_by_role("row").filter(has_text="Unused fixture")).to_contain_text("尚无上游调用")
     right.get_by_role("button", name="撤销").click()
+    expect(right).to_have_count(0)
+    show_revoked = page.get_by_role("checkbox", name="显示已撤销", exact=False)
+    expect(show_revoked).not_to_be_checked()
+    show_revoked.check()
     expect(right.get_by_role("button", name="撤销")).to_be_disabled()
     expect(right).to_contain_text("2 次请求")
+    expect(right).to_contain_text("免费调用 1 次")
+    page.get_by_role("button", name="刷新数据", exact=True).click()
+    expect(right).to_be_visible()
+    show_revoked.uncheck()
+    expect(right).to_have_count(0)
+    assert page.request.post(f"{BASE}/v1/search", headers={"Authorization": f"Bearer {b['token']}"}, data={"query": "revoked"}).status == 401
+    page.route(f"**/api/tokens/{a['id']}", lambda route: route.fulfill(status=500, json={"error": {"code": "fixture_error", "message": "撤销失败测试"}}))
+    left.get_by_role("button", name="撤销").click()
+    expect(page.get_by_role("alert")).to_contain_text("撤销失败测试")
+    expect(left.get_by_role("button", name="撤销")).to_be_enabled()
+    page.unroute(f"**/api/tokens/{a['id']}")
+    page.get_by_role("button", name="关闭提示").click()
     for token in [a, b]:
         assert token["token"] not in page.locator("body").inner_text()
     page.screenshot(path=str(ARTIFACTS / "token-usage-desktop.png"), full_page=True)
@@ -66,6 +85,19 @@ with sync_playwright() as p:
     page.get_by_role("group", name="凭证统计周期").scroll_into_view_if_needed()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.screenshot(path=str(ARTIFACTS / "token-usage-mobile.png"), full_page=True)
+    page.set_viewport_size({"width": 1440, "height": 1100})
+    left.get_by_role("button", name="撤销").click()
+    expect(left).to_have_count(0)
+    page.get_by_role("row").filter(has_text="Unused fixture").get_by_role("button", name="撤销").click()
+    expect(page.get_by_text("暂无可用的访问凭证。", exact=False)).to_be_visible()
+    show_revoked.check()
+    expect(left).to_contain_text("3 次请求")
+    expect(right).to_contain_text("2 次请求")
+    assert len(page.request.get(f"{BASE}/api/tokens").json()) == 3
+    page.reload()
+    page.get_by_role("button", name="客户端接入", exact=True).click()
+    expect(page.get_by_role("checkbox", name="显示已撤销", exact=False)).not_to_be_checked()
+    expect(page.get_by_text("暂无可用的访问凭证。", exact=False)).to_be_visible()
     assert not errors, errors
     browser.close()
-print("Client usage: HTTP traffic, costs/credits, free/unknown, period switch, revoke, secret masking and desktop/mobile passed")
+print("Client usage: traffic/accounting, hidden/revealed revoked rows, reload/refresh, empty/error states, revocation enforcement and desktop/mobile passed")

@@ -28,7 +28,9 @@ test('P1/P4: anonymous SDK JSON and SSE responses retain all excerpts and full t
       assert.deepEqual(calls[0].params, { name: 'web_search', arguments: { objective: 'SQLite official WAL', search_queries: ['SQLite official WAL'], session_id: 'stable-session' } });
       const fetched = await f.engine.providers.parallelFree('https://sqlite.org/wal.html', 'stable-session', AbortSignal.timeout(3000));
       assert.equal(fetched.results[0].snippet, full); assert.ok(full.length > 25000);
-      assert.deepEqual(calls[1].params, { name: 'web_fetch', arguments: { urls: ['https://sqlite.org/wal.html'], full_content: true, session_id: 'stable-session' } });
+      const { objective, ...fetchArgs } = calls[1].params!.arguments;
+      assert.match(String(objective), /complete page/);
+      assert.deepEqual({ name: calls[1].params!.name, arguments: fetchArgs }, { name: 'web_fetch', arguments: { urls: ['https://sqlite.org/wal.html'], full_content: true, session_id: 'stable-session' } });
       assert.equal(f.store.keys().length, 0);
     } finally { await f.cleanup(); }
   }

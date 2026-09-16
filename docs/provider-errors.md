@@ -20,7 +20,7 @@
 
 网关按访问凭证和请求 ID 处理 MCP 取消通知，HTTP 连接断开也会停止尚未完成的上游调用。多个独立客户端应使用不同凭证；同一凭证同时复用相同请求 ID 时，网关不会猜测取消哪一个请求。已经完成的其他渠道结果仍可保留。
 
-Parallel 全文读取未提供 `objective` 时，可能提示摘录缺少相关性目标。`full_content` 仍独立返回；这条提示本身不是调用失败或免费额度限制。[Parallel 全文设置](https://docs.parallel.ai/extract/advanced-extract-settings)
+Parallel 全文读取未提供 `objective` 时，可能提示摘录缺少相关性目标。网关现在为免费 MCP 和付费 API 的正文读取统一传入目标：优先使用 `fetch.objective`（1–200 字符），省略时使用完整阅读页面的通用目标；搜索测试页会带上原搜索问题的前 200 字符。始终保留 `full_content: true`，不因此缩减正文。旧日志中的原始提示仍保留，并附中文解释；这条提示本身不是调用失败或免费额度限制。[Parallel 全文设置](https://docs.parallel.ai/extract/advanced-extract-settings)
 
 ## 验证场景
 

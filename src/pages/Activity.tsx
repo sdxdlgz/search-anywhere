@@ -11,6 +11,7 @@ function WarningDetails({ warnings }: { warnings?: string[] }) {
   return <details className="mt-2 min-w-48 max-w-lg text-xs text-warn">
     <summary className="cursor-pointer">查询提示（{warnings.length}）</summary>
     <ul className="mt-2 grid gap-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+    {warnings.some(w => w.includes('Neither objective nor search_queries were provided')) && <p className="mt-2 text-muted">该提示表示摘录未按研究主题筛选，本身不代表正文抓取失败或免费额度受限。</p>}
   </details>;
 }
 
@@ -51,7 +52,8 @@ export function Playground({ data, reload }: { data: Data; reload: () => Promise
   const readPage = async (url: string) => {
     setReading(url); setError(''); setReader(null); setPage(null);
     try {
-      const detail = await api<{ collection_id?: string; results: { url: string; snippet: string }[] }>('/fetch', { method: 'POST', body: json({ url, profile: result?.profile || profile }) });
+      const objective = result?.query.slice(0, 200).replace(/[\uD800-\uDBFF]$/, '').trim() || undefined;
+      const detail = await api<{ collection_id?: string; results: { url: string; snippet: string }[] }>('/fetch', { method: 'POST', body: json({ url, profile: result?.profile || profile, objective }) });
       if (detail.collection_id) setReader({ collection: detail.collection_id, urls: detail.results.map(r => r.url), title: '网页正文' });
       else setPage({ url, content: detail.results[0]?.snippet || '没有返回正文。' });
     } catch (e) { setError((e as Error).message); } finally { setReading(''); await reload(); }

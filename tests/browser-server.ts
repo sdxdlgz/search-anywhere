@@ -34,6 +34,7 @@ const f = fixture(async (url, init) => {
   if (url === 'https://api.parallel.ai/v1/search' && String(init?.body).includes('parallel-warning-browser')) return Response.json({
     results: [result('parallel')], warnings: [
       { type: 'input_validation_warning', message: 'Reducing max_results=40 to 20.' },
+      { type: 'input_validation_warning', message: 'Neither objective nor search_queries were provided, provide at least one to increase the relevance of excerpts.' },
       { code: 'display_test', message: `Credential ${new Headers(init?.headers).get('x-api-key')}; <img src=x onerror=window.warningInjected=true>` },
     ],
   });

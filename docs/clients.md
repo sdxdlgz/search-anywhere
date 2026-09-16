@@ -168,7 +168,7 @@ curl https://search.example.com/v1/search \
 | `/v1/search` | `query`；可选 `profile`、`max_results`、`per_provider_results`、`include_domains`、`exclude_domains` | 检索并返回结果集合 |
 | `/v1/results` | `collection_id`；可选 `offset`、`limit` | 读取结果的后续页 |
 | `/v1/evidence` | `collection_id`、`url`；可选 `offset`、`limit` | 按字符偏移读取逐来源证据 |
-| `/v1/fetch` | `url`；可选 `profile` | 请求正文并保存结果集合 |
+| `/v1/fetch` | `url`；可选 `profile`、`objective`（1–200 字符的研究问题） | 请求正文并保存结果集合；省略 objective 时使用通用页面阅读目标 |
 
 搜索响应中的 `collection_id` 用于后续读取；结果分页的 `next_offset` 为 `null` 时已到末页。`max_results` 是展示页大小，不是整个结果集合的上限。结果与证据读取使用创建集合的同一访问凭证。
 

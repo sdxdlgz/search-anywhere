@@ -30,6 +30,7 @@ with sync_playwright() as p:
     outcome.locator("summary").click()
     expect(outcome.locator("details")).to_contain_text("Reducing max_results=40 to 20.")
     expect(outcome.locator("details")).to_contain_text("input_validation_warning")
+    expect(outcome.locator("details")).to_contain_text("本身不代表正文抓取失败或免费额度受限")
     assert secret not in outcome.inner_text()
     assert outcome.locator("img").count() == 0
     assert page.evaluate("window.warningInjected === undefined")
@@ -40,6 +41,11 @@ with sync_playwright() as p:
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.screenshot(path=str(ARTIFACTS / "warnings-results-mobile.png"), full_page=True)
     page.set_viewport_size({"width": 1440, "height": 1050})
+    page.get_by_label("你想搜索什么？").fill("尚未提交的新问题")
+    with page.expect_request(lambda request: request.url.endswith('/api/fetch')) as fetch_request:
+        page.get_by_role("button", name="读取正文", exact=False).first.click()
+    assert fetch_request.value.post_data_json['objective'] == 'parallel-warning-browser'
+    expect(page.get_by_role("heading", name="网页正文", exact=True)).to_be_visible()
     page.get_by_role("button", name="用量与日志", exact=True).click()
     page.get_by_role("button", name="parallel-warning-browser", exact=False).click()
     detail = page.locator(".request-detail")
