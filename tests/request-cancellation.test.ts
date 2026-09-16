@@ -71,6 +71,8 @@ test('F6/F7: MCP and HTTP disconnects cancel upstream work; a healthy slower too
       const base = await f.listen(), { token } = f.store.createToken('cancel-test');
       const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
       await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers } }));
+      const notification = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 'unknown' } }) });
+      assert.equal(notification.status, 202); assert.equal(await notification.text(), '');
       const controller = new AbortController();
       const task = transport === 'mcp'
         ? client.callTool({ name: 'search', arguments: { query: 'disconnect test' } }, undefined, { signal: controller.signal, timeout: 5000 })
