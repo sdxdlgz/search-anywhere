@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { fixture, login } from './helpers.js';
+import { captureBackup } from '../server/backup-data.js';
 
 test('T1/T3: HTTP and MCP attribute search/fetch/cache to IDs; reads, rejected input and console activity are excluded', async () => {
   const f = fixture(), base = await f.listen(), client = new Client({ name: 'metering-fixture', version: '1' });
@@ -29,7 +30,24 @@ test('T1/T3: HTTP and MCP attribute search/fetch/cache to IDs; reads, rejected i
     assert.equal(left.requests, 3); assert.equal(left.cache_hits, 1); assert.equal(left.upstream_calls, 2); assert.equal(left.reported_cost_usd, .014);
     assert.equal(right.requests, 2); assert.equal(right.upstream_calls, 2);
     const publicJson = JSON.stringify(tokens); for (const secret of [a.token, b.token, 'fingerprint', 'fixture-exa-secret']) assert.ok(!publicJson.includes(secret));
-    f.store.revokeToken(a.id); assert.equal((await post('search', { query: 'revoked' })).status, 401);
-    assert.deepEqual(f.store.tokens().find(t => t.id === a.id)!.usage!.lifetime, left);
+    const before = captureBackup(f.store), dashboard = f.store.dashboard();
+    const remove = (headers: Record<string, string>, id = a.id) => fetch(`${base}/api/tokens/${id}`, { method: 'DELETE', headers });
+    assert.equal((await remove({})).status, 401);
+    assert.equal((await remove({ Authorization: `Bearer ${a.token}` })).status, 401);
+    assert.equal(f.store.tokens().length, 2);
+    for (const id of [a.id, a.id, 'unknown-token-id']) assert.equal((await remove({ cookie }, id)).status, 200);
+    assert.equal((await post('search', { query: 'deleted' })).status, 401);
+    assert.equal((await fetch(`${base}/mcp`, { method: 'POST', headers: { Authorization: `Bearer ${a.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) })).status, 401);
+    assert.equal(f.store.get('SELECT id FROM client_tokens WHERE id=?', a.id), undefined);
+    assert.deepEqual(f.store.tokens().map(t => t.id), [b.id]);
+    assert.deepEqual(f.store.tokens()[0].usage!.lifetime, right);
+    const after = captureBackup(f.store);
+    for (const table of ['requests', 'calls', 'collections'] as const) assert.deepEqual(after.tables[table], before.tables[table]);
+    assert.deepEqual(f.store.dashboard(), dashboard);
+    const replacement = f.store.createToken(a.name);
+    assert.notEqual(replacement.id, a.id);
+    assert.equal(replacement.usage!.lifetime.requests, 0);
+    assert.equal((await post('results', { collection_id: first.collection_id }, replacement.token)).status, 404);
+    assert.equal((await post('evidence', { collection_id: first.collection_id, url: first.results[0].url }, replacement.token)).status, 404);
   } finally { await client.close(); await f.cleanup(); }
 });

@@ -9,11 +9,11 @@
 | R5 | 超时和费用 | 一源超时部分成功、全部失败、401/402/429/5xx 分类、每次尝试计数、失败不伪报零费用、每日调用上限 | engine.test.ts / providers.test.ts |
 | R6 | 用量/官方额度 | 本地请求与上游调用分开；Tavily key/account 不重算，各家账号授权与官方快照分开处理，Parallel 按组织查询 USD 余额；同步失败保留旧数据并节流 | providers.test.ts / usage.test.ts / 各家 balance、session-api 测试 |
 | R7 | 缓存 | 相同请求命中、并发合并、不跨客户端、模式/凭证变更失效、过期、部分失败不缓存 | engine.test.ts |
-| R8 | HTTP/鉴权 | 管理登录/退出/错误口令、客户端 token 新增/撤销、权限分离、输入校验、无异常信息泄露 | api.test.ts |
+| R8 | HTTP/鉴权 | 管理登录/退出/错误口令、客户端 token 创建/删除、权限分离、输入校验、无异常信息泄露 | api.test.ts |
 | R9 | MCP | 官方 SDK 客户端初始化/list/search/fetch；鉴权拒绝、工具失败返回错误、断开不泄露 | mcp.test.ts |
 | R10 | 正文读取 | 三服务字段映射、来源 URL、公网 URL 校验、失败回退、字数上限 | providers.test.ts / engine.test.ts |
 | R11 | 持久化 | 重启后 key/profile/log 保留；加密密钥不可用时明确失败 | storage.test.ts |
-| R12 | 管理界面 | 登录、无数据状态、增改 key归属、脱敏、预设保存、统计/日志、测试查询、token 生成/撤销；窄屏与无控制台错误 | browser + screenshot |
+| R12 | 管理界面 | 登录、无数据状态、增改 key归属、脱敏、预设保存、统计/日志、测试查询、token 创建/删除；窄屏与无控制台错误 | browser + screenshot |
 
 不使用真实上游 key；付费搜索与真实账户余额在用户录入凭证后通过测试页验证。
 

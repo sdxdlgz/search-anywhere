@@ -76,7 +76,7 @@ export function createApp(options: { directory: string; adminToken: string; fetc
   };
   const client = (req: Request, res: Response, next: NextFunction) => {
     const caller = store.authenticateToken(bearer(req));
-    if (!caller) return failure(res, 401, 'unauthorized', '搜索访问凭证无效或已撤销。');
+    if (!caller) return failure(res, 401, 'unauthorized', '搜索访问凭证无效或已删除。');
     res.locals.caller = caller; next();
   };
   app.get('/health', (_req, res) => res.json({ status: 'ok', version: '0.3.0' }));
@@ -196,7 +196,7 @@ export function createApp(options: { directory: string; adminToken: string; fetc
   app.post('/api/retention/clean', (req, res) => res.json(retention.confirm(z.object({ cutoff: z.string().datetime(), expires_at: z.string().datetime(), confirmation_token: z.string().length(64) }).strict().parse(req.body))));
   app.get('/api/tokens', (_req, res) => res.json(store.tokens()));
   app.post('/api/tokens', (req, res) => res.status(201).json(store.createToken(z.object({ name }).parse(req.body).name)));
-  app.delete('/api/tokens/:id', (req, res) => { store.revokeToken(String(req.params.id)); res.json({ ok: true }); });
+  app.delete('/api/tokens/:id', (req, res) => { store.deleteToken(String(req.params.id)); res.json({ ok: true }); });
   app.get('/api/logs', (req, res) => {
     const args = z.object({ limit: z.coerce.number().int().min(1).max(100).default(30), offset: z.coerce.number().int().min(0).max(100000).default(0) }).parse(req.query);
     res.json(store.logs(args.limit, args.offset));

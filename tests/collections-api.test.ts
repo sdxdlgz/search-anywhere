@@ -22,7 +22,7 @@ test('C3/C5: authenticated collection pages and evidence enforce token IDs, vali
     const cookie = await login(base);
     assert.equal((await fetch(`${base}/api/results`, { method: 'POST', headers: { cookie, 'Content-Type': 'application/json' }, body: JSON.stringify(args) })).status, 200);
     assert.equal(f.store.todayCalls(), 1);
-    f.store.revokeToken(a.id);
+    f.store.deleteToken(a.id);
     assert.equal((await post('results', args)).status, 401);
     assert.equal((await post('evidence', { ...args, url: data.results[0].url })).status, 401);
   } finally { await f.cleanup(); }

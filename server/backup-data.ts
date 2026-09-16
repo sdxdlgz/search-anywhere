@@ -98,6 +98,8 @@ export function validateBackup(store: Store, value: unknown): BackupData {
     insertRows(memory, store, data, false);
     if (memory.prepare('PRAGMA foreign_key_check').all().length) throw invalidBackup();
     checkRecords(data);
+    // Old exports kept revoked credentials; restoring them must not recreate deleted rows.
+    data.tables.client_tokens = data.tables.client_tokens.filter(row => row.enabled === 1);
     return data;
   } catch { throw invalidBackup(); }
   finally { memory.close(); }

@@ -2,8 +2,49 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './helpers.js';
 import { Store } from '../server/store.js';
-import { captureBackup, restoreBackup, validateBackup } from '../server/backup-data.js';
+import { backupSummary, captureBackup, restoreBackup, validateBackup } from '../server/backup-data.js';
 import { Retention } from '../server/retention.js';
+
+test('D2: startup and old-backup restore remove disabled credentials while preserving active rows and historical accounting', async () => {
+  const source = fixture(), target = fixture();
+  try {
+    source.add('exa'); source.store.saveProfile({ ...source.store.profile()!, modes: { exa: 'auto', parallel: null, tavily: null } });
+    const removed = source.store.createToken('legacy revoked'), active = source.store.createToken('active'), inactive = source.store.createToken('legacy null');
+    await source.engine.search({ query: 'retained deleted-owner history' }, removed);
+    source.store.run('UPDATE client_tokens SET enabled=0 WHERE id=?', removed.id);
+    source.store.run('UPDATE client_tokens SET enabled=NULL WHERE id=?', inactive.id);
+    const legacy = captureBackup(source.store), dashboard = source.store.dashboard();
+    const expected = { ...legacy.tables, client_tokens: legacy.tables.client_tokens.filter(t => t.id === active.id) };
+    const imported = validateBackup(target.store, legacy);
+    assert.equal(backupSummary(imported).access_tokens, 1);
+    restoreBackup(target.store, imported);
+    assert.deepEqual(captureBackup(target.store).tables, expected);
+    assert.equal(target.store.authenticateToken(removed.token), undefined);
+    assert.deepEqual(target.store.dashboard(), dashboard);
+    for (let pass = 0; pass < 2; pass++) {
+      const reopened = new Store(source.directory);
+      try {
+        assert.deepEqual(captureBackup(reopened).tables, expected);
+        assert.equal(reopened.authenticateToken(removed.token), undefined);
+        assert.equal(reopened.authenticateToken(inactive.token), undefined);
+      } finally { reopened.close(); }
+    }
+    restoreBackup(target.store, validateBackup(target.store, captureBackup(source.store)));
+    assert.deepEqual(captureBackup(target.store).tables, expected);
+    assert.equal(target.store.authenticateToken(active.token)?.id, active.id);
+    source.store.run('UPDATE client_tokens SET enabled=0');
+    const allRevoked = validateBackup(target.store, captureBackup(source.store));
+    assert.equal(backupSummary(allRevoked).access_tokens, 0);
+    restoreBackup(target.store, allRevoked);
+    assert.deepEqual(target.store.tokens(), []);
+    assert.deepEqual(target.store.dashboard(), dashboard);
+    for (let pass = 0; pass < 2; pass++) {
+      const reopened = new Store(source.directory);
+      try { assert.deepEqual(reopened.tokens(), []); assert.deepEqual(reopened.dashboard(), dashboard); }
+      finally { reopened.close(); }
+    }
+  } finally { await source.cleanup(); await target.cleanup(); }
+});
 
 test('T3/T4: clean-up and backup restore preserve client statistics and manual balance rowids', async () => {
   const source = fixture(), target = fixture();

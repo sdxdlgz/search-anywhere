@@ -28,9 +28,13 @@ test('T2/T3: currency and provider credits stay separate; zero, free, unknown an
     assert.equal(usage.reported_cost_usd, .007); assert.equal(usage.estimated_cost_usd, .011);
     assert.deepEqual(usage.credits_by_provider, [{ provider: 'keenable', reported: 3, estimated: null }, { provider: 'tavily', reported: 1, estimated: 2 }]);
     f.store.finishCall(running, { status: 'success', duration_ms: 1, cost_usd: 0, billing_source: 'reported' });
-    f.store.finishRequest(id, 'partial', 8); f.store.revokeToken(a.id);
+    f.store.finishRequest(id, 'partial', 8);
     usage = f.store.tokens().find(t => t.id === a.id)!.usage!.lifetime;
     assert.equal(usage.running, 0); assert.equal(usage.running_calls, 0); assert.equal(usage.partial, 1); assert.equal(usage.reported_cost_usd, .007);
+    const ledger = f.store.all('SELECT rowid,* FROM calls');
+    f.store.deleteToken(a.id);
+    assert.ok(!f.store.tokens().some(t => t.id === a.id));
+    assert.deepEqual(f.store.all('SELECT rowid,* FROM calls'), ledger);
     for (const token of [b, unused]) {
       const empty = f.store.tokens().find(t => t.id === token.id)!.usage!.lifetime;
       assert.equal(empty.requests, 0); assert.equal(empty.upstream_calls, 0); assert.equal(empty.reported_cost_usd, null); assert.deepEqual(empty.credits_by_provider, []);

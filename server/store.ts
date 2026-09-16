@@ -76,6 +76,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS calls_key ON calls(key_id);
       CREATE INDEX IF NOT EXISTS requests_time ON requests(created_at);
       CREATE INDEX IF NOT EXISTS collections_time ON collections(created_at);
+      DELETE FROM client_tokens WHERE enabled IS NOT 1;
       UPDATE calls SET status='error', error_code='interrupted' WHERE status='running';
       UPDATE requests SET status='error' WHERE status='running';
     `);
@@ -275,7 +276,7 @@ export class Store {
     if (row) this.run('UPDATE client_tokens SET last_used=? WHERE id=?', now(), row.id);
     return row;
   }
-  revokeToken(id: string) { this.run('UPDATE client_tokens SET enabled=0 WHERE id=?', id); }
+  deleteToken(id: string) { this.run('DELETE FROM client_tokens WHERE id=?', id); }
   createSession() { const token = newToken('session'); this.run('INSERT INTO sessions VALUES(?,?)', hash(token), Date.now() + 86400000); return token; }
   validSession(token: string) { return !!this.get('SELECT 1 FROM sessions WHERE fingerprint=? AND expires>?', hash(token), Date.now()); }
   endSession(token: string) { this.run('DELETE FROM sessions WHERE fingerprint=?', hash(token)); }
