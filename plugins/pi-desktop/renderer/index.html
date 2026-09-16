@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+  <title>Search Anywhere · 连接设置</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header><span class="eyebrow">SEARCH ANYWHERE / PI-DESKTOP</span><h1>把来源带进对话。</h1><p>连接你的搜索网关，检索、核对并保留完整证据。</p></header>
+    <form id="connection">
+      <div class="section-heading"><h2>网关连接</h2><span id="badge">读取中</span></div>
+      <label for="gateway">网关地址</label>
+      <input id="gateway" name="gateway" type="url" required placeholder="https://search.example.com" autocomplete="url" aria-describedby="domain-note">
+      <p class="hint" id="domain-note"></p>
+      <label for="token">搜索访问凭证</label>
+      <input id="token" name="token" type="password" placeholder="sa_…" autocomplete="new-password" spellcheck="false" aria-describedby="token-note">
+      <p class="hint" id="token-note">填写网关签发的搜索访问凭证。</p>
+      <div class="columns">
+        <div><label for="profile">默认预设</label><input id="profile" name="profile" maxlength="50" placeholder="跟随网关默认值"><p class="hint">全面检索可填 coverage</p></div>
+        <div><label for="timeout">总等待时间 / 秒</label><input id="timeout" name="timeoutSeconds" type="number" min="30" max="600" step="1" value="200" required><p class="hint">长任务会分段等待</p></div>
+      </div>
+      <div class="actions"><button id="save" type="submit">保存连接</button><button id="test" type="button" class="secondary">测试连接</button></div>
+      <p id="feedback" role="status" aria-live="polite"></p>
+    </form>
+    <aside><h2>配置随插件保留</h2><p>普通应用升级不会覆盖插件私有配置。凭证保存在本机插件数据目录，界面仅显示掩码；这不是系统加密凭证库。</p><p>启用后停用同名 MCP 服务，避免模型混用两个入口。关闭应用会终止尚未完成的任务。</p><button id="clear" class="text-button" type="button">清除已保存的凭证</button></aside>
+  </main>
+  <script src="panel.js"></script>
+</body>
+</html>

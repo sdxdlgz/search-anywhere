@@ -144,6 +144,8 @@ Pi 核心不内置 MCP；可通过支持远程 HTTP 的 MCP 扩展连接网关�
 
 ### PI-Desktop 内置 MCP
 
+推荐安装 [Search Anywhere 独立插件](../plugins/pi-desktop/README.md)。插件直接调用 HTTP API，长搜索通过任务等待领取结果，避开内置 MCP 的短超时，也无需修改应用安装包。它提供连接设置和脱敏凭证显示，普通应用升级会保留插件配置。启用后停用同名 MCP 服务，避免混用入口。
+
 PI-Desktop 与 Pi CLI 扩展的实现不同。部分 PI-Desktop 0.14.8 构建把握手时的 10 秒超时保留在 HTTP transport 中，用于后续全部请求；即使工具层超时更长，耗时超过约 10 秒的搜索也会被客户端中止。此时 Nginx 可记录 499，网关旧版本把取消与超时都标为 `timeout / 504`。
 
 需要在客户端 HTTP transport 中按调用类型区分超时：握手使用连接超时，`tools/call` 使用工具调用超时，并将后者设为至少 180 秒。只有提高网关预设超时或发送保活信息不能修复这种固定总时限。使用已修复的客户端构建后，重连 MCP 再测试覆盖搜索；不必将 Exa 降为快速模式。[错误排查](provider-errors.md)

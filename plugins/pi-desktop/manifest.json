@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "sdxdlgz.search-anywhere",
+  "name": "Search Anywhere",
+  "version": "0.1.0",
+  "description": "多供应商搜索、逐来源证据与正文读取。长搜索分段等待，无需修改客户端。",
+  "author": "sdxdlgz",
+  "homepage": "https://github.com/sdxdlgz/search-anywhere",
+  "repository": "https://github.com/sdxdlgz/search-anywhere",
+  "main": "main.cjs",
+  "engines": { "piDesktop": ">=0.14.8" },
+  "activationEvents": ["onStartup"],
+  "permissions": ["agent.tool.register", "ui.panel", "net.fetch"],
+  "net": { "domains": ["localhost", "127.0.0.1"] },
+  "ui": { "panel": "renderer/index.html", "width": 560, "height": 720, "resizable": true, "title": "Search Anywhere" },
+  "contributes": {
+    "commands": [{ "id": "connection", "title": "Search Anywhere：连接设置", "keywords": ["search", "搜索", "设置"] }],
+    "agentTools": []
+  }
+}

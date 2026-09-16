@@ -70,7 +70,7 @@ docker compose exec search-anywhere npm run admin:token
 }
 ```
 
-将地址替换为客户端可访问的网关地址，工具调用超时建议至少 180 秒。[客户端接入指南](docs/clients.md)提供 Claude Code、Codex、Hermes、LobeChat、Kelivo 和 DSH 的配置方式，以及 Pi 扩展接入说明。
+将地址替换为客户端可访问的网关地址，工具调用超时建议至少 180 秒。[客户端接入指南](docs/clients.md)提供 Claude Code、Codex、Hermes、LobeChat、Kelivo 和 DSH 的配置方式，以及 Pi 扩展接入说明。PI-Desktop 可安装[独立搜索插件](plugins/pi-desktop/README.md)，通过分段等待完成长搜索，无需修改客户端程序。
 
 | MCP 工具 | 功能 |
 | --- | --- |
